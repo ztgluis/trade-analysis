@@ -1,0 +1,295 @@
+//@version=6
+indicator("Swing Signal Bot v1.0", overlay=true, max_bars_back=500)
+
+// ═══════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════
+
+// Moving Averages
+ema_len   = input.int(20,  "Fast EMA Length",  group="📈 Moving Averages", minval=1)
+sma_mid   = input.int(50,  "Mid SMA Length",   group="📈 Moving Averages", minval=1)
+sma_slow  = input.int(200, "Slow SMA Length",  group="📈 Moving Averages", minval=1)
+
+// RSI
+rsi_len      = input.int(14, "Length",        group="📊 RSI")
+rsi_bull_min = input.int(45, "Bull Zone Min", group="📊 RSI")
+rsi_bull_max = input.int(65, "Bull Zone Max", group="📊 RSI")
+rsi_bear_min = input.int(35, "Bear Zone Min", group="📊 RSI")
+rsi_bear_max = input.int(60, "Bear Zone Max", group="📊 RSI")
+
+// MACD
+macd_fast = input.int(12, "Fast",   group="📉 MACD")
+macd_slow = input.int(26, "Slow",   group="📉 MACD")
+macd_sig  = input.int(9,  "Signal", group="📉 MACD")
+
+// Fakeout Filters
+atr_len    = input.int(14,    "ATR Length",             group="🛡️ Fakeout Filters")
+atr_mult   = input.float(0.3, "ATR Buffer Multiplier",  group="🛡️ Fakeout Filters", step=0.05)
+vol_mult   = input.float(1.2, "Volume Multiplier",      group="🛡️ Fakeout Filters", step=0.1)
+req_macd_x = input.bool(true, "Require MACD Crossover", group="🛡️ Fakeout Filters")
+
+// Multi-Timeframe
+use_mtf = input.bool(true, "Enable Weekly MTF Filter", group="🔭 Multi-Timeframe")
+
+// Display
+show_buy    = input.bool(true, "Show BUY Signals",        group="🎨 Display")
+show_sell   = input.bool(true, "Show SELL Signals",       group="🎨 Display")
+show_bounce = input.bool(true, "Show BOUNCE Signals",     group="🎨 Display")
+show_div    = input.bool(true, "Show Divergence Markers", group="🎨 Display")
+show_table  = input.bool(true, "Show Signal Table",       group="🎨 Display")
+show_regime = input.bool(true, "Show Regime Background",  group="🎨 Display")
+
+// ═══════════════════════════════════════════════════════════════════
+// MOVING AVERAGES
+// ═══════════════════════════════════════════════════════════════════
+ema20  = ta.ema(close, ema_len)
+sma50  = ta.sma(close, sma_mid)
+sma200 = ta.sma(close, sma_slow)
+
+plot(ema20,  "20 EMA",  color=color.new(color.blue, 0),   linewidth=1)
+plot(sma50,  "50 SMA",  color=color.new(color.orange, 0), linewidth=2)
+plot(sma200, "200 SMA", color=color.new(color.red, 0),    linewidth=2)
+
+// ═══════════════════════════════════════════════════════════════════
+// CORE INDICATORS
+// ═══════════════════════════════════════════════════════════════════
+rsi                        = ta.rsi(close, rsi_len)
+[macd_line, signal_line, ] = ta.macd(close, macd_fast, macd_slow, macd_sig)
+atr                        = ta.atr(atr_len)
+avg_vol                    = ta.sma(volume, 20)
+
+// ═══════════════════════════════════════════════════════════════════
+// MULTI-TIMEFRAME (Weekly)
+// ═══════════════════════════════════════════════════════════════════
+w_close = request.security(syminfo.tickerid, "W", close,            lookahead=barmerge.lookahead_off)
+w_ema20 = request.security(syminfo.tickerid, "W", ta.ema(close, 20),lookahead=barmerge.lookahead_off)
+w_rsi   = request.security(syminfo.tickerid, "W", ta.rsi(close, 14),lookahead=barmerge.lookahead_off)
+
+weekly_bull = not use_mtf or (w_rsi > 45 and w_close > w_ema20)
+weekly_bear = not use_mtf or (w_rsi < 55 and w_close < w_ema20)
+
+// ═══════════════════════════════════════════════════════════════════
+// REGIME FILTER (200 SMA direction)
+// ═══════════════════════════════════════════════════════════════════
+sma200_rising  = sma200 > sma200[20]
+sma200_falling = sma200 < sma200[20]
+bull_regime    = close > sma200 and sma200_rising
+bear_regime    = close < sma200 and sma200_falling
+
+// ═══════════════════════════════════════════════════════════════════
+// FAKEOUT FILTERS
+// ═══════════════════════════════════════════════════════════════════
+
+// ATR buffer — price must clear EMA by a meaningful distance
+atr_buffer = atr * atr_mult
+
+// Volume confirmation
+high_vol = volume >= avg_vol * vol_mult
+
+// N-candle confirmation: 2 consecutive closes above/below EMA (not a 1-bar fluke)
+consec_above = close > ema20 and close[1] > ema20[1]
+consec_below = close < ema20 and close[1] < ema20[1]
+
+// Candle body position (ignore wicks)
+body_top    = math.max(open, close)
+body_bottom = math.min(open, close)
+body_above_ema = body_bottom > ema20  // full body above EMA
+body_below_ema = body_top    < ema20  // full body below EMA
+
+// ═══════════════════════════════════════════════════════════════════
+// RSI DIVERGENCE DETECTION (simplified 5-bar pivot)
+// ═══════════════════════════════════════════════════════════════════
+lb = 5
+
+// Bullish divergence: price makes lower low, RSI makes higher low
+price_ll = close < ta.lowest(close[1], lb)
+rsi_hl   = rsi   > ta.lowest(rsi[1],   lb)
+bull_div  = price_ll and rsi_hl
+
+// Bearish divergence: price makes higher high, RSI makes lower high
+price_hh = close > ta.highest(close[1], lb)
+rsi_lh   = rsi   < ta.highest(rsi[1],   lb)
+bear_div  = price_hh and rsi_lh
+
+// ═══════════════════════════════════════════════════════════════════
+// BUY SIGNAL
+// ═══════════════════════════════════════════════════════════════════
+macd_cross_up = ta.crossover(macd_line, signal_line)
+
+buy_signal =
+     consec_above                               // 2 consecutive closes above EMA (no fakeout)
+     and close > (ema20 + atr_buffer)           // ATR buffer cleared (meaningful distance above)
+     and close > sma50                          // above mid-term trend
+     and bull_regime                            // 200 SMA filter: bull market only
+     and rsi >= rsi_bull_min                    // RSI in healthy range (not weak)
+     and rsi <= rsi_bull_max                    // RSI not overbought
+     and (not req_macd_x or macd_cross_up)      // MACD bullish crossover (optional)
+     and high_vol                               // volume confirms the move
+     and weekly_bull                            // weekly timeframe agrees
+     and not bear_div                           // no bearish divergence present
+
+// ═══════════════════════════════════════════════════════════════════
+// SELL SIGNAL
+// ═══════════════════════════════════════════════════════════════════
+macd_cross_dn = ta.crossunder(macd_line, signal_line)
+
+sell_signal =
+     consec_below                               // 2 consecutive closes below EMA
+     and close < (ema20 - atr_buffer)           // ATR buffer cleared below
+     and close < sma50                          // below mid-term trend
+     and bear_regime                            // 200 SMA filter: bear market only
+     and rsi >= rsi_bear_min                    // RSI not too oversold (room to fall)
+     and rsi <= rsi_bear_max                    // RSI not too high
+     and (not req_macd_x or macd_cross_dn)      // MACD bearish crossover (optional)
+     and high_vol                               // volume confirms
+     and weekly_bear                            // weekly timeframe agrees
+     and not bull_div                           // no bullish divergence present
+
+// ═══════════════════════════════════════════════════════════════════
+// BOUNCE RECOVERY SIGNAL (Fakeout Bounce)
+// Fires when price was below EMA for 2 bars, then closes back above
+// ═══════════════════════════════════════════════════════════════════
+was_below_2bar = close[1] < ema20[1] and close[2] < ema20[2]
+back_above_ema = close > ema20
+bull_candle    = close > open
+
+bounce_signal =
+     was_below_2bar                             // was genuinely below EMA (not just 1 candle)
+     and back_above_ema                         // now recovered above EMA
+     and bull_candle                            // green candle on the recovery
+     and rsi < 60                               // not yet overbought
+     and not bear_regime                        // don't catch bounces in hard downtrends
+     and not bear_div                           // no bearish divergence
+
+// ═══════════════════════════════════════════════════════════════════
+// PLOT SIGNALS
+// ═══════════════════════════════════════════════════════════════════
+plotshape(show_buy    and buy_signal,    "▲ BUY",    shape.triangleup,   location.belowbar, color.new(color.green, 0),   size=size.normal)
+plotshape(show_sell   and sell_signal,   "▼ SELL",   shape.triangledown, location.abovebar, color.new(color.red, 0),     size=size.normal)
+plotshape(show_bounce and bounce_signal, "● BOUNCE", shape.circle,       location.belowbar, color.new(color.aqua, 0),    size=size.small)
+
+// Divergence markers
+plotshape(show_div and bull_div, "Bull Div", shape.diamond, location.belowbar, color.new(color.lime, 20),    size=size.tiny)
+plotshape(show_div and bear_div, "Bear Div", shape.diamond, location.abovebar, color.new(color.fuchsia, 20), size=size.tiny)
+
+// Regime background shading
+bgcolor(
+     show_regime and bull_regime ? color.new(color.green, 95) :
+     show_regime and bear_regime ? color.new(color.red,   95) : na,
+     title="Regime Background")
+
+// ═══════════════════════════════════════════════════════════════════
+// SIGNAL STATUS TABLE (top-right corner)
+// ═══════════════════════════════════════════════════════════════════
+if show_table and barstate.islast
+    var table t = table.new(
+         position.top_right, 2, 10,
+         bgcolor     = color.new(color.black, 70),
+         border_color= color.new(color.gray, 50),
+         border_width = 1)
+
+    hdr_bg = color.new(color.navy, 30)
+
+    // Header row
+    table.cell(t, 0, 0, "Condition",  text_color=color.white, text_size=size.small, bgcolor=hdr_bg)
+    table.cell(t, 1, 0, "Status",     text_color=color.white, text_size=size.small, bgcolor=hdr_bg)
+
+    // Row 1 – Regime
+    table.cell(t, 0, 1, "Regime (200 SMA)", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 1,
+         bull_regime ? "✅ Bull" : bear_regime ? "🔴 Bear" : "⚪ Neutral",
+         text_color = bull_regime ? color.green : bear_regime ? color.red : color.gray,
+         text_size  = size.tiny)
+
+    // Row 2 – 50 SMA
+    table.cell(t, 0, 2, "Above 50 SMA", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 2,
+         close > sma50 ? "✅ Yes" : "❌ No",
+         text_color = close > sma50 ? color.green : color.red,
+         text_size  = size.tiny)
+
+    // Row 3 – RSI
+    table.cell(t, 0, 3, "RSI (" + str.tostring(rsi, "#.0") + ")", text_color=color.silver, text_size=size.tiny)
+    rsi_ok = rsi >= rsi_bull_min and rsi <= rsi_bull_max
+    table.cell(t, 1, 3,
+         rsi_ok            ? "✅ OK"  :
+         rsi > rsi_bull_max ? "🔴 OB" : "⚠️ Weak",
+         text_color = rsi_ok ? color.green : rsi > rsi_bull_max ? color.red : color.orange,
+         text_size  = size.tiny)
+
+    // Row 4 – MACD
+    table.cell(t, 0, 4, "MACD", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 4,
+         macd_line > signal_line ? "✅ Bull" : "❌ Bear",
+         text_color = macd_line > signal_line ? color.green : color.red,
+         text_size  = size.tiny)
+
+    // Row 5 – Volume
+    table.cell(t, 0, 5, "Volume", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 5,
+         high_vol ? "✅ High" : "⚠️ Low",
+         text_color = high_vol ? color.green : color.orange,
+         text_size  = size.tiny)
+
+    // Row 6 – Weekly trend
+    table.cell(t, 0, 6, "Weekly Trend", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 6,
+         weekly_bull ? "✅ Bull" : "❌ Bear",
+         text_color = weekly_bull ? color.green : color.red,
+         text_size  = size.tiny)
+
+    // Row 7 – Divergence
+    table.cell(t, 0, 7, "Divergence", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 7,
+         bull_div ? "🟢 Bullish" : bear_div ? "🔴 Bearish" : "— None",
+         text_color = bull_div ? color.lime : bear_div ? color.red : color.gray,
+         text_size  = size.tiny)
+
+    // Row 8 – N-candle filter
+    table.cell(t, 0, 8, "Consec. Closes", text_color=color.silver, text_size=size.tiny)
+    table.cell(t, 1, 8,
+         consec_above ? "✅ Above EMA" : consec_below ? "🔴 Below EMA" : "⚪ Mixed",
+         text_color = consec_above ? color.green : consec_below ? color.red : color.gray,
+         text_size  = size.tiny)
+
+    // Row 9 – Active signal
+    table.cell(t, 0, 9, "▶ Signal",    text_color=color.white, text_size=size.small, bgcolor=hdr_bg)
+    table.cell(t, 1, 9,
+         buy_signal    ? "🟢 BUY"    :
+         sell_signal   ? "🔴 SELL"   :
+         bounce_signal ? "🔵 BOUNCE" : "⚪ None",
+         text_color =
+              buy_signal    ? color.green :
+              sell_signal   ? color.red   :
+              bounce_signal ? color.aqua  : color.gray,
+         text_size  = size.small,
+         bgcolor    = hdr_bg)
+
+// ═══════════════════════════════════════════════════════════════════
+// WEBHOOK ALERT CONDITIONS
+// JSON payload received by your Python backend
+// ═══════════════════════════════════════════════════════════════════
+alertcondition(
+     buy_signal,
+     "🟢 BUY Signal",
+     '{"ticker":"{{ticker}}","action":"BUY","type":"momentum_breakout","price":"{{close}}","open":"{{open}}","high":"{{high}}","low":"{{low}}","volume":"{{volume}}","time":"{{time}}","tf":"{{interval}}","exchange":"{{exchange}}"}')
+
+alertcondition(
+     sell_signal,
+     "🔴 SELL Signal",
+     '{"ticker":"{{ticker}}","action":"SELL","type":"momentum_breakdown","price":"{{close}}","open":"{{open}}","high":"{{high}}","low":"{{low}}","volume":"{{volume}}","time":"{{time}}","tf":"{{interval}}","exchange":"{{exchange}}"}')
+
+alertcondition(
+     bounce_signal,
+     "🔵 BOUNCE Signal",
+     '{"ticker":"{{ticker}}","action":"BUY","type":"fakeout_bounce","price":"{{close}}","open":"{{open}}","high":"{{high}}","low":"{{low}}","volume":"{{volume}}","time":"{{time}}","tf":"{{interval}}","exchange":"{{exchange}}"}')
+
+alertcondition(
+     bull_div,
+     "🟡 Bullish Divergence",
+     '{"ticker":"{{ticker}}","action":"WATCH","type":"bull_divergence","price":"{{close}}","time":"{{time}}","tf":"{{interval}}","exchange":"{{exchange}}"}')
+
+alertcondition(
+     bear_div,
+     "🟡 Bearish Divergence",
+     '{"ticker":"{{ticker}}","action":"WATCH","type":"bear_divergence","price":"{{close}}","time":"{{time}}","tf":"{{interval}}","exchange":"{{exchange}}"}')

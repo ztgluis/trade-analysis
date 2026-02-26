@@ -1,0 +1,411 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// VIX Spike Warning v1.0
+//
+// PURPOSE:
+//   Detects pre-conditions for a VIX spike BEFORE it happens.
+//   Also detects post-spike mean-reversion opportunities.
+//
+// TRADEABLE INSTRUMENTS (via Schwab):
+//   LONG VOL signal  → Buy UVXY (1.5x) or VIXY (1x)  — hold days only, decay is brutal
+//   SHORT VOL signal → Buy SVXY (-0.5x)               — after spike, VIX mean-reversion
+//
+// USAGE:
+//   Add as a sub-panel to any chart (SPX, SPY, ABNB, etc.)
+//   OR add to the CBOE:VIX chart directly.
+//   All data is pulled internally via request.security().
+//
+// SCORING (max 12):
+//   VIX Compression   0–3   BB squeeze → coiled spring
+//   VVIX Signal        0–3   Volatility of VIX → smart money hedging
+//   Term Structure     0–2   VIX vs VIX3M backwardation
+//   SPX Divergence     0–2   VIX rising while SPX near highs
+//   Credit Stress      0–1   HYG breakdown
+//   Seasonal Risk      0–1   Sep/Oct historically most dangerous
+//
+//   🔴 Score 9–12 → HIGH DANGER  → Long UVXY/VIXY
+//   🟡 Score 5–8  → ELEVATED     → Caution, reduce longs
+//   🟢 Score 0–4  → CALM         → Normal conditions, favor SVXY
+//
+// REVERSION SCORE (max 8):
+//   Fires SHORT VOL signal when VIX has already spiked and is rolling over
+//   → Buy SVXY for mean-reversion trade
+// ─────────────────────────────────────────────────────────────────────────────
+
+indicator("VIX Spike Warning v1.0", overlay=false, max_bars_back=500)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Warning Score Thresholds
+thresh_high     = input.int(9, "HIGH DANGER Min Score",     group="🚨 Warning Thresholds", minval=1, maxval=12)
+thresh_elevated = input.int(5, "ELEVATED Min Score",        group="🚨 Warning Thresholds", minval=1, maxval=12)
+thresh_rev      = input.int(6, "SHORT VOL (Reversion) Min", group="🚨 Warning Thresholds", minval=1, maxval=8)
+
+// Compression settings
+bb_len      = input.int(20,  "BB Length (VIX)",           group="🗜️ Compression")
+bb_mult     = input.float(2.0,"BB Std Dev Multiplier",    group="🗜️ Compression", step=0.1)
+bb_pct_len  = input.int(252, "BB Width Percentile Lookback (bars)", group="🗜️ Compression", tooltip="252 = ~1 trading year on daily chart")
+
+// VVIX settings
+vvix_high   = input.int(120, "VVIX HIGH threshold",       group="📡 VVIX", minval=80, maxval=200)
+vvix_mid    = input.int(100, "VVIX ELEVATED threshold",   group="📡 VVIX", minval=60, maxval=150)
+
+// Term Structure
+ts_pct      = input.float(0.97, "VIX/VIX3M Flat Zone (<1 = backwardation)", group="📐 Term Structure", step=0.01, tooltip="When VIX/VIX3M > this ratio, term structure is flattening")
+
+// SPX Divergence
+spy_high_pct = input.float(0.99, "SPY 'Near High' threshold (% of 20-day high)", group="📊 SPX Divergence", step=0.005)
+
+// Seasonal
+use_seasonal = input.bool(true, "Apply Seasonal Risk Bonus (Sep/Oct)", group="📅 Seasonal")
+
+// Display
+show_vix_bb   = input.bool(true, "Show VIX Bollinger Bands",   group="🎨 Display")
+show_vvix     = input.bool(true, "Show VVIX line",              group="🎨 Display")
+show_table    = input.bool(true, "Show Score Breakdown Table",  group="🎨 Display")
+show_signals  = input.bool(true, "Show Signal Markers",         group="🎨 Display")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DATA PULLS
+// All via request.security so this script works on any chart
+// ═══════════════════════════════════════════════════════════════════════════
+vix  = request.security("CBOE:VIX",  timeframe.period, close, lookahead=barmerge.lookahead_off)
+vvix = request.security("CBOE:VVIX", timeframe.period, close, lookahead=barmerge.lookahead_off)
+v3m  = request.security("CBOE:VIX3M",timeframe.period, close, lookahead=barmerge.lookahead_off)
+hyg  = request.security("AMEX:HYG",  timeframe.period, close, lookahead=barmerge.lookahead_off)
+spy  = request.security("AMEX:SPY",  timeframe.period, close, lookahead=barmerge.lookahead_off)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VIX BOLLINGER BANDS
+// ═══════════════════════════════════════════════════════════════════════════
+vix_sma    = ta.sma(vix, bb_len)
+vix_std    = ta.stdev(vix, bb_len)
+vix_upper  = vix_sma + bb_mult * vix_std
+vix_lower  = vix_sma - bb_mult * vix_std
+
+// Normalized BB width — how wide/tight the bands are relative to VIX level
+vix_bb_width = (vix_upper - vix_lower) / vix_sma
+
+// Percentile rank of current BB width vs last N bars
+// Low percentile = unusually tight bands = compression = spring coiling
+vix_bb_pct = ta.percentrank(vix_bb_width, bb_pct_len)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VIX TREND & REGIME
+// ═══════════════════════════════════════════════════════════════════════════
+vix_sma20  = ta.sma(vix, 20)
+vix_sma50  = ta.sma(vix, 50)
+vix_rsi5   = ta.rsi(vix, 5)
+vix_rsi14  = ta.rsi(vix, 14)
+
+// VIX regime
+vix_calm    = vix < 15
+vix_elevd   = vix >= 15 and vix < 25
+vix_high    = vix >= 25 and vix < 35
+vix_extreme = vix >= 35
+
+// VIX rising while still low (pre-spike setup)
+vix_rising  = vix > vix_sma20 and vix_sma20 > vix_sma20[5]
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VVIX ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════
+vvix_sma10     = ta.sma(vvix, 10)
+vvix_rising    = vvix > vvix_sma10
+vvix_vix_ratio = vvix / vix
+vvix_ratio_sma = ta.sma(vvix_vix_ratio, 10)
+
+// VVIX/VIX ratio expanding = smart money buying VIX protection aggressively
+// relative to current VIX level (key divergence signal)
+smart_money_hedge = vvix_vix_ratio > vvix_ratio_sma
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VIX TERM STRUCTURE  (VIX vs VIX3M)
+// ═══════════════════════════════════════════════════════════════════════════
+// Normal (contango):      VIX < VIX3M  → ratio < 1.0
+// Flat:                   VIX ≈ VIX3M  → ratio ≈ 1.0
+// Backwardation (stress): VIX > VIX3M  → ratio > 1.0
+ts_ratio        = vix / v3m
+ts_backwardation = ts_ratio >= 1.0
+ts_flattening    = ts_ratio >= ts_pct and ts_ratio < 1.0
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SPX / VIX DIVERGENCE
+// ═══════════════════════════════════════════════════════════════════════════
+spy_20high     = ta.highest(spy, 20)
+spy_near_high  = spy >= spy_20high * spy_high_pct
+vix_above_ma   = vix > vix_sma20
+
+// Classic warning: SPX holding near highs but VIX also rising → distribution
+spx_vix_div    = spy_near_high and vix_above_ma
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HYG CREDIT STRESS
+// ═══════════════════════════════════════════════════════════════════════════
+hyg_sma20    = ta.sma(hyg, 20)
+hyg_below_ma = hyg < hyg_sma20
+hyg_10low    = hyg <= ta.lowest(hyg, 10)
+hyg_stress   = hyg_below_ma and hyg_10low
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEASONAL RISK
+// ═══════════════════════════════════════════════════════════════════════════
+is_danger_season = use_seasonal and (month == 9 or month == 10)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ╔══════════════════════════════════════════════════════════════╗
+// ║           SPIKE WARNING SCORE  (max 12)                     ║
+// ║                                                             ║
+// ║  Answers: "How primed is the environment for a VIX spike?"  ║
+// ╚══════════════════════════════════════════════════════════════╝
+// ═══════════════════════════════════════════════════════════════════════════
+
+// VIX Compression (max 3) — low percentile = tightly coiled spring
+s_compress = vix_bb_pct <= 10 ? 3 : vix_bb_pct <= 25 ? 2 : vix_bb_pct <= 40 ? 1 : 0
+
+// VVIX Signal (max 3) — smart money fear gauge
+s_vvix_lvl   = vvix >= vvix_high ? 2 : vvix >= vvix_mid ? 1 : 0
+s_vvix_ratio = smart_money_hedge ? 1 : 0
+
+// Term Structure (max 2) — how inverted is the curve?
+s_termstruct = ts_backwardation ? 2 : ts_flattening ? 1 : 0
+
+// SPX Divergence (max 2) — VIX rising while market near highs
+s_divergence = spx_vix_div ? 2 : vix_above_ma ? 1 : 0
+
+// Credit Stress (max 1) — credit cracks before equities
+s_credit = hyg_stress ? 1 : 0
+
+// Seasonal Risk (max 1)
+s_seasonal = is_danger_season ? 1 : 0
+
+// TOTAL WARNING SCORE (max 12)
+warning_score = s_compress + s_vvix_lvl + s_vvix_ratio + s_termstruct + s_divergence + s_credit + s_seasonal
+
+// Danger levels
+is_high_danger  = warning_score >= thresh_high
+is_elevated     = warning_score >= thresh_elevated and warning_score < thresh_high
+is_calm         = warning_score < thresh_elevated
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ╔══════════════════════════════════════════════════════════════╗
+// ║           REVERSION SCORE  (max 8)                          ║
+// ║                                                             ║
+// ║  Answers: "Has VIX spiked and is it ready to mean-revert?"  ║
+// ║  → SHORT VOL signal → Buy SVXY                             ║
+// ╚══════════════════════════════════════════════════════════════╝
+// ═══════════════════════════════════════════════════════════════════════════
+
+// VIX must be elevated for a reversion trade to make sense
+r_level    = vix >= 35 ? 2 : vix >= 25 ? 1 : 0
+
+// VIX overbought on short timeframe (RSI 5-bar)
+r_rsi      = vix_rsi5 >= 80 ? 2 : vix_rsi5 >= 70 ? 1 : 0
+
+// VIX above its upper Bollinger Band (extreme extension)
+r_bb_ext   = vix > vix_upper ? 1 : 0
+
+// VIX making a lower high (3-bar comparison) from elevated level
+r_lower_hi = vix < ta.highest(vix, 3) and vix > 20 ? 2 : 0
+
+// VVIX declining (fear of fear subsiding)
+r_vvix_dn  = vvix < vvix[1] and vvix < vvix_sma10 ? 1 : 0
+
+// TOTAL REVERSION SCORE (max 8)
+reversion_score  = r_level + r_rsi + r_bb_ext + r_lower_hi + r_vvix_dn
+short_vol_signal = reversion_score >= thresh_rev
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADE SIGNALS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// LONG VOL — Pre-spike warning fires, buy UVXY or VIXY
+long_vol_strong   = is_high_danger and not is_high_danger[1]      // first bar crossing HIGH
+long_vol_watch    = is_elevated    and not is_elevated[1]          // first bar crossing ELEVATED
+
+// SHORT VOL — Post-spike reversion, buy SVXY
+short_vol_entry   = short_vol_signal and not short_vol_signal[1]   // first bar of reversion signal
+
+// Danger clearing (exit long vol positions)
+danger_clearing   = is_elevated[1] and is_calm                     // dropping back to calm
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLOTS — VIX + Bollinger Bands (main panel)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Dynamic panel background based on danger level
+panel_bg = is_high_danger ? color.new(color.red,    88) : is_elevated ? color.new(color.orange, 90) : color.new(color.green, 95)
+bgcolor(panel_bg, title="Danger Zone Background")
+
+// VIX line — color reflects current regime
+vix_col = vix_extreme ? color.red : vix_high ? color.orange : vix_elevd ? color.yellow : color.new(color.teal, 20)
+plot(vix, "VIX", color=vix_col, linewidth=2)
+
+// VIX Bollinger Bands
+vix_upper_plot = plot(show_vix_bb ? vix_upper : na, "VIX BB Upper", color=color.new(color.gray, 50), linewidth=1)
+vix_lower_plot = plot(show_vix_bb ? vix_lower : na, "VIX BB Lower", color=color.new(color.gray, 50), linewidth=1)
+vix_mid_plot   = plot(show_vix_bb ? vix_sma   : na, "VIX BB Mid",   color=color.new(color.gray, 70), linewidth=1, style=plot.style_circles)
+fill(vix_upper_plot, vix_lower_plot, color=color.new(color.gray, 93), title="BB Fill")
+
+// VVIX — scaled to VIX axis for visual comparison (divided by 3 roughly maps 90-150 → 30-50)
+vvix_scaled = vvix / 3
+plot(show_vvix ? vvix_scaled : na, "VVIX ÷3", color=color.new(color.purple, 20), linewidth=1, style=plot.style_line)
+
+// Key VIX levels — horizontal reference lines
+hline(30, "VIX 30 (Stress)",    color=color.new(color.orange, 30), linestyle=hline.style_dashed, linewidth=1)
+hline(20, "VIX 20 (Caution)",   color=color.new(color.yellow, 40), linestyle=hline.style_dashed, linewidth=1)
+hline(15, "VIX 15 (Complacency)", color=color.new(color.teal, 40), linestyle=hline.style_dashed, linewidth=1)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WARNING SCORE — plotted as histogram at bottom of panel
+// Normalized to VIX scale: score * (vix_max/12) so it fits visually
+// ═══════════════════════════════════════════════════════════════════════════
+score_col = is_high_danger ? color.new(color.red, 20) : is_elevated ? color.new(color.orange, 20) : color.new(color.teal, 40)
+
+// Score bar scaled to fit under VIX (max score 12 shown as a bar up to ~15 VIX units)
+score_plot_val = warning_score * 1.2
+plot(score_plot_val, "Warning Score (×1.2)", color=score_col, linewidth=3, style=plot.style_histogram)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL MARKERS
+// ═══════════════════════════════════════════════════════════════════════════
+plotshape(show_signals and long_vol_strong,  "🔴 LONG VOL (STRONG)",  shape.triangleup,   location.belowbar, color.new(color.red,    0), size=size.normal,  text="LONG\nVOL")
+plotshape(show_signals and long_vol_watch,   "🟡 LONG VOL (WATCH)",   shape.triangleup,   location.belowbar, color.new(color.orange, 0), size=size.small,   text="WATCH")
+plotshape(show_signals and short_vol_entry,  "🟢 SHORT VOL (SVXY)",   shape.triangledown, location.abovebar, color.new(color.green,  0), size=size.normal,  text="SHORT\nVOL")
+plotshape(show_signals and danger_clearing,  "✅ Danger Clearing",     shape.circle,       location.abovebar, color.new(color.teal,   0), size=size.tiny,    text="CLEAR")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+f_bar(v, mx) =>
+    p = v / mx
+    p >= 1.0 ? "█████" : p >= 0.8 ? "████░" : p >= 0.6 ? "███░░" : p >= 0.4 ? "██░░░" : p >= 0.2 ? "█░░░░" : "░░░░░"
+
+f_col(v) =>
+    v >= 2 ? color.green : v == 1 ? color.orange : color.red
+
+f_warn_col(v) =>
+    v >= thresh_high ? color.red : v >= thresh_elevated ? color.orange : color.teal
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCORE BREAKDOWN TABLE
+// ═══════════════════════════════════════════════════════════════════════════
+if show_table and barstate.islast
+    var table t = table.new(position.top_right, 3, 20, bgcolor=color.new(color.black, 72), border_color=color.new(color.gray, 60), border_width=1, frame_color=color.new(color.gray, 40), frame_width=1)
+
+    hdr = color.new(color.navy, 25)
+    sep = color.new(color.gray, 70)
+
+    // ── Header
+    table.cell(t, 0, 0, "VIX Spike Warning",    text_color=color.white,  text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 0, "Pts",                  text_color=color.silver, text_size=size.tiny,  bgcolor=hdr)
+    table.cell(t, 2, 0, "Bar",                  text_color=color.silver, text_size=size.tiny,  bgcolor=hdr)
+
+    // ── VIX Status
+    table.cell(t, 0, 1, "── VIX DATA ────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 1, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 1, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    vix_regime_lbl = vix_extreme ? "⚡ EXTREME" : vix_high ? "🔴 HIGH" : vix_elevd ? "🟡 ELEVATED" : "🟢 CALM"
+    table.cell(t, 0, 2, "VIX (" + str.tostring(vix, "#.##") + ")", text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 2, vix_regime_lbl, text_color=vix_extreme ? color.red : vix_high ? color.orange : vix_elevd ? color.yellow : color.teal, text_size=size.tiny)
+    table.cell(t, 2, 2, "",            text_color=color.gray, text_size=size.tiny)
+
+    table.cell(t, 0, 3, "VVIX (" + str.tostring(vvix, "#.##") + ")", text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 3, vvix >= vvix_high ? "⚡ EXTREME" : vvix >= vvix_mid ? "🟡 HIGH" : "🟢 Normal", text_color=vvix >= vvix_high ? color.red : vvix >= vvix_mid ? color.orange : color.teal, text_size=size.tiny)
+    table.cell(t, 2, 3, "",            text_color=color.gray, text_size=size.tiny)
+
+    ts_lbl = ts_backwardation ? "⚡ BACKWARDATION" : ts_flattening ? "🟡 FLATTENING" : "🟢 Contango"
+    table.cell(t, 0, 4, "Term Structure",       text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 4, ts_lbl,                 text_color=ts_backwardation ? color.red : ts_flattening ? color.orange : color.teal, text_size=size.tiny)
+    table.cell(t, 2, 4, str.tostring(ts_ratio, "#.###"), text_color=color.gray, text_size=size.tiny)
+
+    // ── Warning Score breakdown
+    table.cell(t, 0, 5, "── WARNING SCORE ───", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 5, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 5, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    table.cell(t, 0, 6, "VIX Compression",      text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 6, str.tostring(s_compress) + "/3 (" + str.tostring(math.round(vix_bb_pct)) + "%ile)", text_color=f_col(s_compress), text_size=size.tiny)
+    table.cell(t, 2, 6, f_bar(s_compress, 3),   text_color=f_col(s_compress), text_size=size.tiny)
+
+    vvix_tot = s_vvix_lvl + s_vvix_ratio
+    table.cell(t, 0, 7, "VVIX (lvl + ratio)",   text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 7, str.tostring(vvix_tot) + "/3", text_color=f_col(vvix_tot), text_size=size.tiny)
+    table.cell(t, 2, 7, f_bar(vvix_tot, 3),     text_color=f_col(vvix_tot), text_size=size.tiny)
+
+    table.cell(t, 0, 8, "Term Structure",        text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 8, str.tostring(s_termstruct) + "/2", text_color=f_col(s_termstruct), text_size=size.tiny)
+    table.cell(t, 2, 8, f_bar(s_termstruct, 2), text_color=f_col(s_termstruct), text_size=size.tiny)
+
+    table.cell(t, 0, 9, "SPX Divergence",        text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 9, str.tostring(s_divergence) + "/2", text_color=f_col(s_divergence), text_size=size.tiny)
+    table.cell(t, 2, 9, f_bar(s_divergence, 2), text_color=f_col(s_divergence), text_size=size.tiny)
+
+    table.cell(t, 0, 10, "Credit (HYG)",         text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 10, str.tostring(s_credit) + "/1", text_color=f_col(s_credit), text_size=size.tiny)
+    table.cell(t, 2, 10, f_bar(s_credit, 1),    text_color=f_col(s_credit), text_size=size.tiny)
+
+    table.cell(t, 0, 11, "Seasonal Risk",         text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 11, str.tostring(s_seasonal) + "/1", text_color=f_col(s_seasonal), text_size=size.tiny)
+    table.cell(t, 2, 11, f_bar(s_seasonal, 1),  text_color=f_col(s_seasonal), text_size=size.tiny)
+
+    // ── Warning Total
+    table.cell(t, 0, 12, "────────────────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 12, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 12, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    warn_col = f_warn_col(warning_score)
+    table.cell(t, 0, 13, "WARNING SCORE",        text_color=color.white, text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 13, str.tostring(warning_score) + " / 12", text_color=warn_col, text_size=size.small, bgcolor=hdr)
+    table.cell(t, 2, 13, f_bar(warning_score, 12), text_color=warn_col, text_size=size.small, bgcolor=hdr)
+
+    // ── Reversion Score breakdown
+    table.cell(t, 0, 14, "── REVERSION SCORE ─", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 14, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 14, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    table.cell(t, 0, 15, "VIX Level",            text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 15, str.tostring(r_level) + "/2", text_color=f_col(r_level), text_size=size.tiny)
+    table.cell(t, 2, 15, f_bar(r_level, 2),     text_color=f_col(r_level), text_size=size.tiny)
+
+    table.cell(t, 0, 16, "VIX RSI(5)",           text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 16, str.tostring(r_rsi) + "/2 (" + str.tostring(vix_rsi5, "#.0") + ")", text_color=f_col(r_rsi), text_size=size.tiny)
+    table.cell(t, 2, 16, f_bar(r_rsi, 2),       text_color=f_col(r_rsi), text_size=size.tiny)
+
+    rev_misc = r_bb_ext + r_lower_hi + r_vvix_dn
+    table.cell(t, 0, 17, "BB ext + Trend + VVIX", text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 17, str.tostring(rev_misc) + "/4", text_color=f_col(rev_misc), text_size=size.tiny)
+    table.cell(t, 2, 17, f_bar(rev_misc, 4),    text_color=f_col(rev_misc), text_size=size.tiny)
+
+    rev_col = reversion_score >= thresh_rev ? color.green : reversion_score >= thresh_rev - 2 ? color.orange : color.gray
+    table.cell(t, 0, 18, "REVERSION SCORE",      text_color=color.white, text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 18, str.tostring(reversion_score) + " / 8", text_color=rev_col, text_size=size.small, bgcolor=hdr)
+    table.cell(t, 2, 18, f_bar(reversion_score, 8), text_color=rev_col, text_size=size.small, bgcolor=hdr)
+
+    // ── Active Signal
+    active_sig   = long_vol_strong ? "🔴 LONG VOL (UVXY)" : short_vol_entry ? "🟢 SHORT VOL (SVXY)" : long_vol_watch ? "🟡 WATCH (UVXY)" : danger_clearing ? "✅ Danger Clearing" : "⚪ None"
+    active_col   = long_vol_strong ? color.red : short_vol_entry ? color.green : long_vol_watch ? color.orange : danger_clearing ? color.teal : color.gray
+
+    table.cell(t, 0, 19, "▶ SIGNAL",             text_color=color.white, text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 19, active_sig,              text_color=active_col,  text_size=size.small, bgcolor=hdr)
+    table.cell(t, 2, 19, "",                      text_color=color.gray,  text_size=size.tiny,  bgcolor=hdr)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ALERTS
+// Create ONE alert on this script → "alert() function calls only"
+// → Set webhook URL to your Python backend
+// ═══════════════════════════════════════════════════════════════════════════
+if long_vol_strong
+    alert('{"signal":"LONG_VOL","strength":"STRONG","instrument":"UVXY","warning_score":' + str.tostring(warning_score) + ',"vix":' + str.tostring(vix, "#.##") + ',"vvix":' + str.tostring(vvix, "#.##") + ',"vix3m":' + str.tostring(v3m, "#.##") + ',"ts_ratio":' + str.tostring(ts_ratio, "#.####") + ',"action":"Consider buying UVXY or VIXY — hold days only, not weeks","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if long_vol_watch
+    alert('{"signal":"LONG_VOL","strength":"WATCH","instrument":"UVXY","warning_score":' + str.tostring(warning_score) + ',"vix":' + str.tostring(vix, "#.##") + ',"vvix":' + str.tostring(vvix, "#.##") + ',"action":"VIX danger rising — monitor closely, reduce long equity exposure","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if short_vol_entry
+    alert('{"signal":"SHORT_VOL","strength":"CONFIRMED","instrument":"SVXY","reversion_score":' + str.tostring(reversion_score) + ',"vix":' + str.tostring(vix, "#.##") + ',"vix_rsi5":' + str.tostring(vix_rsi5, "#.0") + ',"action":"VIX spike exhaustion — consider SVXY for mean-reversion","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if danger_clearing
+    alert('{"signal":"DANGER_CLEARING","warning_score":' + str.tostring(warning_score) + ',"vix":' + str.tostring(vix, "#.##") + ',"action":"VIX danger subsiding — resume normal long signals","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)

@@ -1,0 +1,29 @@
+//@version=6
+indicator("Triple MA", overlay=true)
+
+// ── Inputs ──────────────────────────────────────────────────────────
+ma_type = input.string("SMA", "MA Type", options=["SMA", "EMA"], group="Settings")
+src     = input.source(close, "Source", group="Settings")
+
+len1    = input.int(20,  "MA 1 Length", group="MA 1", minval=1)
+col1    = input.color(color.blue,   "MA 1 Color", group="MA 1")
+
+len2    = input.int(50,  "MA 2 Length", group="MA 2", minval=1)
+col2    = input.color(color.orange, "MA 2 Color", group="MA 2")
+
+len3    = input.int(200, "MA 3 Length", group="MA 3", minval=1)
+col3    = input.color(color.red,    "MA 3 Color", group="MA 3")
+
+// ── Calculations ─────────────────────────────────────────────────────
+ma(source, length, type) =>
+    type == "EMA" ? ta.ema(source, length) : ta.sma(source, length)
+
+ma1 = ma(src, len1, ma_type)
+ma2 = ma(src, len2, ma_type)
+ma3 = ma(src, len3, ma_type)
+
+// ── Plots ─────────────────────────────────────────────────────────────
+// plot() title must be a const string (compile-time) — cannot use runtime concatenation
+plot(ma1, "MA 1", color=col1, linewidth=1)
+plot(ma2, "MA 2", color=col2, linewidth=2)
+plot(ma3, "MA 3", color=col3, linewidth=2)

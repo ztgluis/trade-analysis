@@ -1,0 +1,588 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// Growth Signal Bot v4.3  (formerly ABNB Signal Bot)
+// Changes vs v3:
+//   1. entry_mode input — "Strong Buy Only" / "Buy Only" / "All Signals"
+//   2. TP default raised 12% → 15%  (R:R improves 2.4:1 → 3:1)
+//   3. bounce_signal score floor raised 5 → 8
+//   4. vwap_bounce  score floor raised 4 → 7
+//   5. bounce/vwap_bounce now require bull_regime (not just "not bear_regime")
+//   6. Optional trailing stop (use_trail + trail_pct inputs)
+// v4.1 additions:
+//   7. Rolling POC (Point of Control) — highest-volume bar in last N bars
+//      Adds 1 pt when price is above the most-accepted price level
+//      Score max raised 13 → 14;  thresholds: moderate 7→8, strong 10→11
+// v4.2 tuning (gate analysis on GOOG 5y):
+//   8. rsi_bull_max default tightened 68 → 62
+//      Losing trades averaged RSI 63.1 at entry vs 61.1 for winners → stop entering overextended
+//   9. entry_mode default changed "Buy Only" → "All Signals"
+//      MACD gate stays ON for buy_signal (high-quality momentum entries)
+//      bounce_signal + vwap_bounce bypass MACD — pulls in quality pullback catches
+//      Result: Sharpe 0.84 / WR 50% / PF 3.29 vs 0.26 on old Buy Only
+//      (req_macd_x=false + All Signals gives only 0.65 — MACD is valuable when bounce entries exist)
+// v4.3 additions (backtest eval on GOOG 5y — Sharpe 0.82→1.06, CAGR 20→25.6%, PF 3.28→4.33):
+//  10. ADX filter (+1 pt) — ADX > 20 confirms trending market, avoids choppy entries
+//      + ADX hard gate on buy_signal: only enter when market is genuinely trending
+//  11. Fibonacci retracement (+1 pt) — price within 1.5% of 38.2/50/61.8% level
+//      Institutions buy at these levels → price has natural support nearby
+//      Score max raised 14 → 16;  thresholds: moderate 8→8, strong 11→11 (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+strategy("Growth Signal Bot v4.3", overlay=true, max_bars_back=500,
+         initial_capital         = 10000,
+         default_qty_type        = strategy.percent_of_equity,
+         default_qty_value       = 10,
+         commission_type         = strategy.commission.percent,
+         commission_value        = 0.05,
+         slippage                = 2,
+         process_orders_on_close = true,
+         margin_long             = 100,
+         margin_short            = 100)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Moving Averages
+ema_len  = input.int(20,  "Fast EMA",  group="📈 Moving Averages", minval=1)
+sma_mid  = input.int(50,  "Mid SMA",   group="📈 Moving Averages", minval=1)
+sma_slow = input.int(200, "Slow SMA",  group="📈 Moving Averages", minval=1)
+
+// RSI — zones tuned for large-cap growth stock volatility (v4.2: max tightened 68→62)
+rsi_len      = input.int(14, "Length",        group="📊 RSI")
+rsi_bull_min = input.int(42, "Bull Zone Min", group="📊 RSI")
+rsi_bull_max = input.int(62, "Bull Zone Max", group="📊 RSI",
+     tooltip="v4.2: tightened from 68 → 62. Gate analysis showed losing trades entered with avg RSI 63.1 vs 61.1 for winners.")
+rsi_bear_min = input.int(32, "Bear Zone Min", group="📊 RSI")
+rsi_bear_max = input.int(62, "Bear Zone Max", group="📊 RSI")
+
+// MACD
+macd_fast = input.int(12, "Fast",   group="📉 MACD")
+macd_slow = input.int(26, "Slow",   group="📉 MACD")
+macd_sig  = input.int(9,  "Signal", group="📉 MACD")
+
+// Fakeout Filters
+atr_len    = input.int(14,    "ATR Length",             group="🛡️ Fakeout Filters")
+atr_mult   = input.float(0.4, "ATR Buffer Multiplier",  group="🛡️ Fakeout Filters", step=0.05)
+vol_mult   = input.float(1.25,"Volume Multiplier",      group="🛡️ Fakeout Filters", step=0.05)
+vol_strong = input.float(1.8, "Strong Volume Mult",     group="🛡️ Fakeout Filters", step=0.1)
+req_macd_x = input.bool(true, "Require MACD Crossover (buy_signal only)", group="🛡️ Fakeout Filters",
+     tooltip="When ON, buy_signal requires MACD crossover. bounce_signal and vwap_bounce are unaffected. In All Signals mode this gives the best of both: high-quality scored entries + unconstrained pullback catches.")
+
+// Signal Scoring Thresholds  (max score is now 16 with ADX + Fib components)
+score_strong   = input.int(11, "Strong Signal Min Score",   group="🏆 Signal Scoring", minval=1, maxval=16)
+score_moderate = input.int(8,  "Moderate Signal Min Score", group="🏆 Signal Scoring", minval=1, maxval=16)
+score_min_sell = input.int(8,  "Min Score for SELL signal", group="🏆 Signal Scoring", minval=1, maxval=16)
+
+// ── Strategy / Backtest ────────────────────────────────────────────────────
+// FIX 1: entry_mode — isolate signal types to diagnose which ones hurt
+// FIX 2: TP raised to 15% (R:R 3:1 → break-even drops from 29.4% to 25%)
+// FIX 6: Optional trailing stop to lock in profits on big winners
+entry_mode = input.string("All Signals", "Entry Mode",
+     options=["All Signals", "Buy Only", "Strong Buy Only"],
+     group="⚙️ Strategy",
+     tooltip="v4.2 default: All Signals (Sharpe 0.84, WR 50%, PF 3.29 on GOOG 5y). All Signals: buy + bounce + vwap_bounce | Buy Only: scored buy signal only | Strong Buy Only: score ≥ strong threshold only")
+
+sl_pct     = input.float(5.0,  "Stop Loss %",        group="⚙️ Strategy", step=0.5, minval=0.5)
+tp_pct     = input.float(15.0, "Take Profit %",       group="⚙️ Strategy", step=0.5, minval=1.0)  // v4: raised 12→15
+
+use_trail  = input.bool(false, "Use Trailing Stop (instead of fixed TP)", group="⚙️ Strategy",
+     tooltip="When enabled, replaces fixed TP with a trailing stop. Lets big winners run while locking in gains.")
+trail_pct  = input.float(3.0,  "Trail Offset %",      group="⚙️ Strategy", step=0.5, minval=0.5,
+     tooltip="How far (%) price must retrace from peak before trailing stop fires. Only active when Use Trailing Stop is on.")
+
+// VWAP
+show_wvwap      = input.bool(true, "Show Weekly VWAP",            group="📐 VWAP")
+show_mvwap      = input.bool(true, "Show Monthly VWAP",           group="📐 VWAP")
+show_vwap_bands = input.bool(true, "Show VWAP Bands (±1 StdDev)", group="📐 VWAP")
+
+// Volume Profile — Rolling POC
+poc_len  = input.int(50,   "POC Lookback (bars)", group="📊 Volume Profile", minval=10, maxval=300,
+     tooltip="Number of bars to look back when finding the Point of Control (the bar with the highest volume). Higher = longer-term S/R level.")
+show_poc = input.bool(true, "Show POC Line",       group="📊 Volume Profile",
+     tooltip="Plots the rolling Point of Control as a yellow dotted line. Price above = bullish, below = bearish.")
+
+// ADX — Trend Strength Filter  (v4.3)
+adx_len       = input.int(14,   "ADX Length",          group="📶 ADX Filter", minval=1)
+adx_threshold = input.float(20.0,"ADX Threshold",      group="📶 ADX Filter", step=1.0, minval=5.0,
+     tooltip="ADX above this level indicates a trending market (+1 pt). Below = choppy — score point is skipped. ADX gate also blocks buy_signal entries in choppy markets (does not affect bounce/vwap_bounce).")
+use_adx_gate  = input.bool(true, "ADX Hard Gate on buy_signal",  group="📶 ADX Filter",
+     tooltip="When ON, buy_signal entries are blocked when ADX < threshold (choppy market). bounce_signal and vwap_bounce are unaffected — they catch pullbacks regardless of trend strength.")
+
+// Fibonacci Retracement  (v4.3)
+fib_len       = input.int(50,   "Swing Lookback (bars)", group="🌀 Fibonacci", minval=10, maxval=300,
+     tooltip="Number of bars used to find the swing high and swing low for Fibonacci retracement levels. Default 50 ≈ 2.5 months on daily charts.")
+fib_tol_pct   = input.float(1.5, "Level Tolerance %",   group="🌀 Fibonacci", step=0.1, minval=0.1,
+     tooltip="Price is considered 'near' a Fibonacci level if it's within this % of the 38.2%, 50%, or 61.8% retracement. +1 score point when triggered.")
+
+// Multi-Timeframe
+use_mtf = input.bool(true, "Enable Weekly MTF Filter", group="🔭 Multi-Timeframe")
+
+// Display
+show_buy    = input.bool(true, "Show BUY Signals",        group="🎨 Display")
+show_sell   = input.bool(true, "Show SELL Signals",       group="🎨 Display")
+show_bounce = input.bool(true, "Show BOUNCE Signals",     group="🎨 Display")
+show_div    = input.bool(true, "Show Divergence Markers", group="🎨 Display")
+show_table  = input.bool(true, "Show Signal Table",       group="🎨 Display")
+show_regime = input.bool(true, "Show Regime Background",  group="🎨 Display")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOVING AVERAGES
+// ═══════════════════════════════════════════════════════════════════════════
+ema20  = ta.ema(close, ema_len)
+sma50  = ta.sma(close, sma_mid)
+sma200 = ta.sma(close, sma_slow)
+hlc3   = (high + low + close) / 3
+
+plot(ema20,  "20 EMA",  color=color.new(color.blue,   0), linewidth=1)
+plot(sma50,  "50 SMA",  color=color.new(color.orange, 0), linewidth=2)
+plot(sma200, "200 SMA", color=color.new(color.red,    0), linewidth=2)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CORE INDICATORS
+// ═══════════════════════════════════════════════════════════════════════════
+rsi                        = ta.rsi(close, rsi_len)
+[macd_line, signal_line, _] = ta.macd(close, macd_fast, macd_slow, macd_sig)
+atr                        = ta.atr(atr_len)
+avg_vol                    = ta.sma(volume, 20)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEEKLY VWAP  (resets every new week)
+// ═══════════════════════════════════════════════════════════════════════════
+new_week = weekofyear != weekofyear[1] or year != year[1]
+
+var float wk_vol_px  = 0.0
+var float wk_vol     = 0.0
+var float wk_sum_sq  = 0.0
+var int   wk_bar_cnt = 0
+
+if new_week
+    wk_vol_px  := 0.0
+    wk_vol     := 0.0
+    wk_sum_sq  := 0.0
+    wk_bar_cnt := 0
+
+wk_vol_px  += hlc3 * volume
+wk_vol     += volume
+wk_bar_cnt += 1
+
+vwap_weekly = wk_vol_px / wk_vol
+wk_sum_sq  += math.pow(hlc3 - vwap_weekly, 2)
+wk_stdev    = math.sqrt(wk_sum_sq / wk_bar_cnt)
+vwap_w_up1  = vwap_weekly + wk_stdev
+vwap_w_lo1  = vwap_weekly - wk_stdev
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MONTHLY VWAP  (resets every new month)
+// ═══════════════════════════════════════════════════════════════════════════
+new_month = month != month[1] or year != year[1]
+
+var float mo_vol_px  = 0.0
+var float mo_vol     = 0.0
+var int   mo_bar_cnt = 0
+
+if new_month
+    mo_vol_px  := 0.0
+    mo_vol     := 0.0
+    mo_bar_cnt := 0
+
+mo_vol_px  += hlc3 * volume
+mo_vol     += volume
+mo_bar_cnt += 1
+
+vwap_monthly = mo_vol_px / mo_vol
+
+// Plot VWAPs
+plot(show_wvwap ? vwap_weekly  : na, "Weekly VWAP",  color=color.new(color.purple, 0), linewidth=2)
+plot(show_mvwap ? vwap_monthly : na, "Monthly VWAP", color=color.new(color.teal,   0), linewidth=2)
+plot(show_vwap_bands ? vwap_w_up1 : na, "W-VWAP +1σ", color=color.new(color.purple, 70), linewidth=1)
+plot(show_vwap_bands ? vwap_w_lo1 : na, "W-VWAP -1σ", color=color.new(color.purple, 70), linewidth=1)
+
+vwap_band_top = plot(show_vwap_bands ? vwap_w_up1 : na, display=display.none)
+vwap_band_bot = plot(show_vwap_bands ? vwap_w_lo1 : na, display=display.none)
+fill(vwap_band_top, vwap_band_bot, color=color.new(color.purple, 94), title="Weekly VWAP Band Fill")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MULTI-TIMEFRAME (Weekly)
+// ═══════════════════════════════════════════════════════════════════════════
+w_close = request.security(syminfo.tickerid, "W", close,             lookahead=barmerge.lookahead_off)
+w_ema20 = request.security(syminfo.tickerid, "W", ta.ema(close, 20), lookahead=barmerge.lookahead_off)
+w_rsi   = request.security(syminfo.tickerid, "W", ta.rsi(close, 14), lookahead=barmerge.lookahead_off)
+
+weekly_bull = not use_mtf or (w_rsi > 45 and w_close > w_ema20)
+weekly_bear = not use_mtf or (w_rsi < 55 and w_close < w_ema20)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REGIME FILTER
+// ═══════════════════════════════════════════════════════════════════════════
+sma200_rising  = sma200 > sma200[20]
+sma200_falling = sma200 < sma200[20]
+bull_regime    = close > sma200 and sma200_rising
+bear_regime    = close < sma200 and sma200_falling
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FAKEOUT FILTERS
+// ═══════════════════════════════════════════════════════════════════════════
+atr_buffer = atr * atr_mult
+high_vol   = volume >= avg_vol * vol_mult
+strong_vol = volume >= avg_vol * vol_strong
+
+consec_above = close > ema20 and close[1] > ema20[1]
+consec_below = close < ema20 and close[1] < ema20[1]
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RSI DIVERGENCE (5-bar lookback)
+// ═══════════════════════════════════════════════════════════════════════════
+lb       = 5
+price_ll = close < ta.lowest(close[1], lb)
+rsi_hl   = rsi   > ta.lowest(rsi[1],   lb)
+bull_div  = price_ll and rsi_hl
+
+price_hh = close > ta.highest(close[1], lb)
+rsi_lh   = rsi   < ta.highest(rsi[1],   lb)
+bear_div  = price_hh and rsi_lh
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADX  (v4.3 — trend strength, not direction)
+// ta.adx() does not exist in Pine Script v6 — use ta.dmi() which returns
+// [plus_di, minus_di, adx].  We discard the directional components here.
+// ═══════════════════════════════════════════════════════════════════════════
+[_, _, adx_val] = ta.dmi(adx_len, adx_len)
+adx_ok  = adx_val >= adx_threshold    // true = trending market
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIBONACCI RETRACEMENT  (v4.3)
+// Levels measured from swing low: fib_price = low + level * (high - low)
+// Institutions buy at 38.2%, 50%, 61.8% → natural support near these levels
+// ═══════════════════════════════════════════════════════════════════════════
+fib_high  = ta.highest(high, fib_len)
+fib_low   = ta.lowest(low,   fib_len)
+fib_range = fib_high - fib_low
+fib_382   = fib_low + 0.382 * fib_range
+fib_500   = fib_low + 0.500 * fib_range
+fib_618   = fib_low + 0.618 * fib_range
+fib_tol   = close * fib_tol_pct / 100.0
+near_fib  = math.abs(close - fib_382) <= fib_tol or
+             math.abs(close - fib_500) <= fib_tol or
+             math.abs(close - fib_618) <= fib_tol
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VWAP CONDITIONS
+// ═══════════════════════════════════════════════════════════════════════════
+above_wvwap      = close > vwap_weekly
+above_mvwap      = close > vwap_monthly
+below_wvwap      = close < vwap_weekly
+below_mvwap      = close < vwap_monthly
+near_wvwap_lower = low <= vwap_w_lo1 and close > vwap_w_lo1
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ROLLING POC  (Point of Control — bar with highest volume in last N bars)
+// ─────────────────────────────────────────────────────────────────────────
+// Approximates volume profile support/resistance without full bucket math.
+// POC = the price level where the MOST volume was traded recently.
+// Price > POC → buyers accepted paying above the most popular level → bullish.
+// Price < POC → price rejected from the most popular level → bearish.
+// ═══════════════════════════════════════════════════════════════════════════
+poc_max_vol = 0.0
+poc_idx     = 0
+for i = 0 to poc_len - 1
+    if volume[i] > poc_max_vol
+        poc_max_vol := volume[i]
+        poc_idx     := i
+poc_price = hlc3[poc_idx]   // use HLC3 (typical price) of the highest-volume bar
+above_poc = close > poc_price
+below_poc = close < poc_price
+
+plot(show_poc ? poc_price : na, "Rolling POC", color=color.new(color.yellow, 0),
+     linewidth=1, style=plot.style_circles)
+// ↑ tooltip= is NOT valid on plot() — only on input.* functions
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL SCORING SYSTEM  (max 14 points — added POC component in v4.1)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Trend (max 3)
+s_regime = bull_regime   ? 2 : (close > sma200 ? 1 : 0)
+s_sma50  = close > sma50 ? 1 : 0
+
+// Momentum (max 4)
+rsi_ideal    = rsi >= rsi_bull_min and rsi <= rsi_bull_max
+rsi_ok       = rsi >= 35 and rsi < rsi_bull_min
+s_rsi        = rsi_ideal ? 2 : (rsi_ok ? 1 : 0)
+s_macd_pos   = macd_line > signal_line              ? 1 : 0
+s_macd_cross = ta.crossover(macd_line, signal_line) ? 1 : 0
+
+// Volume (max 2)
+s_vol = strong_vol ? 2 : (high_vol ? 1 : 0)
+
+// VWAP (max 2)
+s_vwap_w = above_wvwap ? 1 : 0
+s_vwap_m = above_mvwap ? 1 : 0
+
+// Quality (max 2)
+s_consec    = consec_above ? 1 : 0
+s_weekly_tf = weekly_bull  ? 1 : 0
+
+// Price Structure (max 1) — v4.1 addition
+s_poc = above_poc ? 1 : 0   // +1 if price is above the rolling Point of Control
+
+// ADX (max 1) — v4.3 addition
+s_adx = adx_ok ? 1 : 0      // +1 if ADX confirms a trending market
+
+// Fibonacci (max 1) — v4.3 addition
+s_fib = near_fib ? 1 : 0    // +1 if price is near a key Fibonacci retracement level
+
+// Total bull score (max 16 = 14 base + 2 from v4.3 ADX + Fib)
+bull_score = s_regime + s_sma50 + s_rsi + s_macd_pos + s_macd_cross + s_vol + s_vwap_w + s_vwap_m + s_consec + s_weekly_tf + s_poc + s_adx + s_fib
+
+// Bear mirror scoring
+s_bear_regime  = bear_regime    ? 2 : (close < sma200 ? 1 : 0)
+s_bear_sma50   = close < sma50  ? 1 : 0
+rsi_bear_ideal = rsi >= rsi_bear_min and rsi <= rsi_bear_max
+s_bear_rsi     = rsi_bear_ideal ? 2 : 1
+s_bear_macd_p  = macd_line < signal_line               ? 1 : 0
+s_bear_macd_x  = ta.crossunder(macd_line, signal_line) ? 1 : 0
+s_bear_vol     = strong_vol ? 2 : (high_vol ? 1 : 0)
+s_bear_vwap_w  = below_wvwap ? 1 : 0
+s_bear_vwap_m  = below_mvwap ? 1 : 0
+s_bear_consec  = consec_below ? 1 : 0
+s_bear_weekly  = weekly_bear  ? 1 : 0
+s_bear_poc     = below_poc    ? 1 : 0
+
+bear_score = s_bear_regime + s_bear_sma50 + s_bear_rsi + s_bear_macd_p + s_bear_macd_x + s_bear_vol + s_bear_vwap_w + s_bear_vwap_m + s_bear_consec + s_bear_weekly + s_bear_poc
+
+// Strength flags
+bull_strong   = bull_score >= score_strong
+bull_moderate = bull_score >= score_moderate and bull_score < score_strong
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNALS
+// ─────────────────────────────────────────────────────────────────────────
+// FIX 3: bounce_signal — score floor raised 5 → 7, regime tightened to bull_regime
+// FIX 4: vwap_bounce   — score floor raised 4 → 6, regime tightened to bull_regime
+// FIX 5: both now require confirmed bull_regime (not just "not bear_regime")
+// ═══════════════════════════════════════════════════════════════════════════
+buy_signal =
+     bull_score >= score_moderate
+     and consec_above
+     and close > (ema20 + atr_buffer)
+     and bull_regime
+     and not bear_div
+     and (not req_macd_x or ta.crossover(macd_line, signal_line))
+     and (not use_adx_gate or adx_ok)   // v4.3: ADX gate — skip choppy markets on buy_signal only
+
+sell_signal =
+     bear_score >= score_min_sell
+     and consec_below
+     and close < (ema20 - atr_buffer)
+     and bear_regime
+     and not bull_div
+     and (not req_macd_x or ta.crossunder(macd_line, signal_line))
+
+was_below_2bar = close[1] < ema20[1] and close[2] < ema20[2]
+back_above_ema = close > ema20
+bull_candle    = close > open
+
+bounce_signal =
+     was_below_2bar
+     and back_above_ema
+     and bull_candle
+     and rsi < 65
+     and bull_regime          // v4: was "not bear_regime" — now requires confirmed uptrend
+     and not bear_div
+     and bull_score >= 8      // v4.1: raised from 7 (max now 14)
+
+vwap_bounce =
+     near_wvwap_lower
+     and bull_candle
+     and rsi > 35 and rsi < 60
+     and above_mvwap
+     and bull_regime          // v4: was "not bear_regime" — now requires confirmed uptrend
+     and bull_score >= 7      // v4.1: raised from 6 (max now 14)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STRATEGY ENTRIES & EXITS
+// ─────────────────────────────────────────────────────────────────────────
+// FIX 1: entry_mode controls which signal types are used for entries
+//        Start with "Buy Only" to isolate the scored signal quality.
+//        If win rate is still low on "Buy Only", raise score_moderate to 8-9.
+//        If win rate is good on "Buy Only", selectively re-add bounces.
+// FIX 6: Trailing stop option — replaces fixed TP when use_trail = true
+//        trail_pct % retracement from peak triggers exit
+// ═══════════════════════════════════════════════════════════════════════════
+var float entry_sl = na
+var float entry_tp = na
+
+qualify_buy =
+     entry_mode == "Strong Buy Only" ? (buy_signal and bull_strong) :
+     entry_mode == "Buy Only"        ? buy_signal :
+     (buy_signal or bounce_signal or vwap_bounce)  // "All Signals"
+
+long_entry = qualify_buy and strategy.position_size == 0
+
+if long_entry
+    entry_sl := close * (1.0 - sl_pct / 100.0)
+    entry_tp := close * (1.0 + tp_pct / 100.0)
+    trail_pts = math.round(close * trail_pct / 100.0 / syminfo.mintick)
+    strategy.entry("Long", strategy.long)
+    if use_trail
+        // Trailing stop: activates at entry price, trails by trail_pct%
+        strategy.exit("Exit", "Long", stop=entry_sl, trail_price=close, trail_offset=trail_pts)
+    else
+        // Fixed TP/SL
+        strategy.exit("Exit", "Long", stop=entry_sl, limit=entry_tp)
+
+if sell_signal and strategy.position_size > 0
+    strategy.close("Long", comment="Sell Signal")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL LABEL (for table display)
+// ═══════════════════════════════════════════════════════════════════════════
+signal_label = buy_signal and bull_strong ? "🔥 STRONG BUY" : buy_signal and bull_moderate ? "✅ BUY" : sell_signal ? "🔴 SELL" : bounce_signal ? "🔵 BOUNCE" : vwap_bounce ? "💧 VWAP BOUNCE" : "⚪ None"
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLOT SIGNALS
+// ═══════════════════════════════════════════════════════════════════════════
+plotshape(show_buy and buy_signal and bull_strong,   "🔥 STRONG BUY", shape.triangleup,   location.belowbar, color.new(color.green,  0), size=size.large)
+plotshape(show_buy and buy_signal and bull_moderate, "✅ BUY",         shape.triangleup,   location.belowbar, color.new(color.lime,   0), size=size.normal)
+plotshape(show_sell   and sell_signal,               "▼ SELL",         shape.triangledown, location.abovebar, color.new(color.red,    0), size=size.normal)
+plotshape(show_bounce and bounce_signal,             "● BOUNCE",       shape.circle,       location.belowbar, color.new(color.aqua,   0), size=size.small)
+plotshape(show_bounce and vwap_bounce,               "💧 VWAP Bounce", shape.diamond,      location.belowbar, color.new(color.purple, 0), size=size.small)
+plotshape(show_div and bull_div, "Bull Div", shape.xcross, location.belowbar, color.new(color.lime,    30), size=size.tiny)
+plotshape(show_div and bear_div, "Bear Div", shape.xcross, location.abovebar, color.new(color.fuchsia, 30), size=size.tiny)
+
+regime_bg = show_regime and bull_regime ? color.new(color.green, 95) : show_regime and bear_regime ? color.new(color.red, 95) : na
+bgcolor(regime_bg, title="Regime BG")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS  (defined before use in table)
+// ═══════════════════════════════════════════════════════════════════════════
+f_bar(v, mx) =>
+    p = v / mx
+    p >= 1.0 ? "█████" : p >= 0.8 ? "████░" : p >= 0.6 ? "███░░" : p >= 0.4 ? "██░░░" : p >= 0.2 ? "█░░░░" : "░░░░░"
+
+f_col(v) =>
+    v >= 2 ? color.green : v == 1 ? color.orange : color.red
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL SCORE TABLE
+// ═══════════════════════════════════════════════════════════════════════════
+if show_table and barstate.islast
+    var table t = table.new(position.top_right, 3, 22, bgcolor=color.new(color.black, 72), border_color=color.new(color.gray, 60), border_width=1, frame_color=color.new(color.gray, 40), frame_width=1)
+
+    hdr = color.new(color.navy, 25)
+    sep = color.new(color.gray, 70)
+
+    table.cell(t, 0, 0, "Growth Signal Bot v4.3", text_color=color.white,  text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 0, "Pts",                    text_color=color.silver, text_size=size.tiny,  bgcolor=hdr)
+    table.cell(t, 2, 0, "Bar",                    text_color=color.silver, text_size=size.tiny,  bgcolor=hdr)
+
+    table.cell(t, 0, 1, "── TREND ──────────",  text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 1, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 1, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    table.cell(t, 0, 2, "Regime (200 SMA)",     text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 2, str.tostring(s_regime) + "/2", text_color=f_col(s_regime), text_size=size.tiny)
+    table.cell(t, 2, 2, f_bar(s_regime, 2),     text_color=f_col(s_regime), text_size=size.tiny)
+
+    table.cell(t, 0, 3, "Above 50 SMA",         text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 3, str.tostring(s_sma50) + "/1", text_color=f_col(s_sma50), text_size=size.tiny)
+    table.cell(t, 2, 3, f_bar(s_sma50, 1),      text_color=f_col(s_sma50), text_size=size.tiny)
+
+    table.cell(t, 0, 4, "── MOMENTUM ────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 4, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 4, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    table.cell(t, 0, 5, "RSI (" + str.tostring(rsi, "#.0") + ")", text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 5, str.tostring(s_rsi) + "/2", text_color=f_col(s_rsi), text_size=size.tiny)
+    table.cell(t, 2, 5, f_bar(s_rsi, 2),        text_color=f_col(s_rsi), text_size=size.tiny)
+
+    macd_tot = s_macd_pos + s_macd_cross
+    table.cell(t, 0, 6, "MACD (pos + cross)",   text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 6, str.tostring(macd_tot) + "/2", text_color=f_col(macd_tot), text_size=size.tiny)
+    table.cell(t, 2, 6, f_bar(macd_tot, 2),     text_color=f_col(macd_tot), text_size=size.tiny)
+
+    table.cell(t, 0, 7, "── VOLUME ──────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 7, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 7, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    table.cell(t, 0, 8, "Volume",               text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 8, str.tostring(s_vol) + "/2", text_color=f_col(s_vol), text_size=size.tiny)
+    table.cell(t, 2, 8, f_bar(s_vol, 2),        text_color=f_col(s_vol), text_size=size.tiny)
+
+    table.cell(t, 0, 9, "── VWAP ────────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 9, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 9, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    vwap_tot = s_vwap_w + s_vwap_m
+    table.cell(t, 0, 10, "W-VWAP + M-VWAP",    text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 10, str.tostring(vwap_tot) + "/2", text_color=f_col(vwap_tot), text_size=size.tiny)
+    table.cell(t, 2, 10, f_bar(vwap_tot, 2),    text_color=f_col(vwap_tot), text_size=size.tiny)
+
+    table.cell(t, 0, 11, "── QUALITY ─────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 11, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 11, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    qual_tot = s_consec + s_weekly_tf
+    table.cell(t, 0, 12, "Consec + Weekly TF",  text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 12, str.tostring(qual_tot) + "/2", text_color=f_col(qual_tot), text_size=size.tiny)
+    table.cell(t, 2, 12, f_bar(qual_tot, 2),    text_color=f_col(qual_tot), text_size=size.tiny)
+
+    table.cell(t, 0, 13, "── PRICE STRUCT ────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 13, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 13, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    poc_lbl = "POC (" + str.tostring(poc_price, "#.##") + ")"
+    table.cell(t, 0, 14, poc_lbl,               text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 14, str.tostring(s_poc) + "/1", text_color=f_col(s_poc), text_size=size.tiny)
+    table.cell(t, 2, 14, f_bar(s_poc, 1),       text_color=f_col(s_poc), text_size=size.tiny)
+
+    table.cell(t, 0, 15, "── ADX + FIB (v4.3) ", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 15, "",                      text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 15, "",                      text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    adx_lbl = "ADX (" + str.tostring(adx_val, "#.0") + ")"
+    table.cell(t, 0, 16, adx_lbl,               text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 16, str.tostring(s_adx) + "/1", text_color=f_col(s_adx), text_size=size.tiny)
+    table.cell(t, 2, 16, f_bar(s_adx, 1),       text_color=f_col(s_adx), text_size=size.tiny)
+
+    fib_lbl = near_fib ? "Fib (near level)" : "Fib (no level)"
+    table.cell(t, 0, 17, fib_lbl,               text_color=color.silver, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(t, 1, 17, str.tostring(s_fib) + "/1", text_color=f_col(s_fib), text_size=size.tiny)
+    table.cell(t, 2, 17, f_bar(s_fib, 1),       text_color=f_col(s_fib), text_size=size.tiny)
+
+    table.cell(t, 0, 18, "────────────────────", text_color=color.gray, text_size=size.tiny, bgcolor=sep, text_halign=text.align_left)
+    table.cell(t, 1, 18, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+    table.cell(t, 2, 18, "",                     text_color=color.gray, text_size=size.tiny, bgcolor=sep)
+
+    score_col = bull_score >= score_strong ? color.green : bull_score >= score_moderate ? color.lime : bull_score >= 4 ? color.orange : color.red
+    table.cell(t, 0, 19, "TOTAL SCORE",         text_color=color.white, text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 19, str.tostring(bull_score) + " / 16", text_color=score_col, text_size=size.small, bgcolor=hdr)
+    table.cell(t, 2, 19, f_bar(bull_score, 16), text_color=score_col,  text_size=size.small, bgcolor=hdr)
+
+    mode_col = entry_mode == "Strong Buy Only" ? color.green : entry_mode == "Buy Only" ? color.lime : color.orange
+    table.cell(t, 0, 20, "Entry Mode",          text_color=color.white, text_size=size.tiny, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 20, entry_mode,            text_color=mode_col,   text_size=size.tiny, bgcolor=hdr)
+    table.cell(t, 2, 20, "",                    text_color=color.gray, text_size=size.tiny, bgcolor=hdr)
+
+    sig_col = buy_signal and bull_strong ? color.green : buy_signal and bull_moderate ? color.lime : sell_signal ? color.red : bounce_signal or vwap_bounce ? color.aqua : color.gray
+    table.cell(t, 0, 21, "▶ SIGNAL",            text_color=color.white, text_size=size.small, bgcolor=hdr, text_halign=text.align_left)
+    table.cell(t, 1, 21, signal_label,           text_color=sig_col,    text_size=size.small, bgcolor=hdr)
+    table.cell(t, 2, 21, "",                     text_color=color.gray, text_size=size.tiny,  bgcolor=hdr)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════════════
+if buy_signal and bull_strong
+    alert('{"ticker":"' + syminfo.ticker + '","action":"BUY","strength":"STRONG","score":' + str.tostring(bull_score) + ',"price":' + str.tostring(close, "#.##") + ',"type":"momentum_breakout","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if buy_signal and bull_moderate
+    alert('{"ticker":"' + syminfo.ticker + '","action":"BUY","strength":"MODERATE","score":' + str.tostring(bull_score) + ',"price":' + str.tostring(close, "#.##") + ',"type":"momentum_breakout","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if sell_signal
+    alert('{"ticker":"' + syminfo.ticker + '","action":"SELL","strength":"CONFIRMED","score":' + str.tostring(bear_score) + ',"price":' + str.tostring(close, "#.##") + ',"type":"momentum_breakdown","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if bounce_signal
+    alert('{"ticker":"' + syminfo.ticker + '","action":"BUY","strength":"BOUNCE","score":' + str.tostring(bull_score) + ',"price":' + str.tostring(close, "#.##") + ',"type":"ema_bounce","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
+
+if vwap_bounce
+    alert('{"ticker":"' + syminfo.ticker + '","action":"BUY","strength":"VWAP_BOUNCE","score":' + str.tostring(bull_score) + ',"price":' + str.tostring(close, "#.##") + ',"vwap_weekly":' + str.tostring(vwap_weekly, "#.##") + ',"type":"vwap_lower_band_rejection","tf":"' + timeframe.period + '"}', alert.freq_once_per_bar)
