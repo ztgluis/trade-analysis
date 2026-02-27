@@ -134,6 +134,26 @@ Now both local and cloud environments use the same Supabase database — profile
 
 **Fallback Behavior**: If Supabase credentials are missing or unavailable, the app gracefully falls back to local JSON files (`~/.trader-bot/custom_profiles.json`).
 
+---
+
+### Multi-User Workspaces
+
+Each visitor gets an isolated **workspace** — their own watchlist, custom profiles, and ticker overrides — with no login required.
+
+**How it works:**
+- On first visit, an 8-character token is auto-generated and added to the URL: `https://yourapp.streamlit.app/?w=a3f9c2d1`
+- Bookmarking that URL resumes your workspace on any device
+- All data (watchlist, profiles, overrides) is stored in Supabase scoped to your token
+- Other users visiting the plain URL get their own fresh workspace
+
+**Workspace expander** (in the sidebar under 🔑 Workspace):
+- Shows your current token
+- "Switch to another workspace" input — paste a token to share data between devices or team members
+
+**Claiming legacy data**: If you had data before workspaces were added (stored in the `default` workspace), enter `default` as your token in the Switch input.
+
+**No Supabase?** Workspaces still work — data is stored in local JSON keyed by workspace ID. Not shared across devices in that case.
+
 ## Dashboard Features
 
 ### Watchlist View
