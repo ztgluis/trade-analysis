@@ -719,7 +719,7 @@ def _lib_backtest_expander(strat: dict, key_pfx: str) -> None:
             key=f"{key_pfx}_bt_ticker", placeholder="e.g. TSLA",
         ).upper().strip()
         _bt_period = st.selectbox(
-            "History", ["1y", "2y", "3y", "5y"],
+            "History", ["1y", "2y", "3y", "5y", "max"],
             index=1, key=f"{key_pfx}_bt_period",
         )
         if st.button(
