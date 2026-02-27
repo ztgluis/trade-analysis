@@ -36,36 +36,7 @@ Ticker override priority
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Persistence helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-CUSTOM_PROFILES_FILE = Path.home() / ".trader-bot" / "custom_profiles.json"
-
-
-def _load_custom_data() -> dict:
-    """Load custom profiles and ticker overrides from disk.
-    Returns empty structure on any failure (missing file, bad JSON, etc)."""
-    try:
-        if CUSTOM_PROFILES_FILE.exists():
-            with open(CUSTOM_PROFILES_FILE, "r") as f:
-                data = json.load(f)
-            data.setdefault("profiles", {})
-            data.setdefault("ticker_overrides", {})
-            return data
-    except Exception:
-        pass
-    return {"profiles": {}, "ticker_overrides": {}}
-
-
-def _save_custom_data(data: dict) -> None:
-    """Persist custom profiles and ticker overrides to disk."""
-    CUSTOM_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CUSTOM_PROFILES_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+from . import supabase_db
 
 
 # ─────────────────────────────────────────────────────────────────────────────
