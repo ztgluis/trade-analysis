@@ -1721,6 +1721,9 @@ def main() -> None:
     else:
         render_dashboard_page(workspace_id)
 
+    # Set workspace parameter at the end so it appears last in URL
+    st.query_params["w"] = workspace_id
+
 
 if __name__ == "__main__":
     main()
