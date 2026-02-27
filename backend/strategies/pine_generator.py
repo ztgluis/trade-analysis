@@ -554,8 +554,11 @@ class PineScriptGenerator:
             blocks.append('plot(sma200, "200 SMA", color=color.new(color.red,    0), linewidth=2)')
 
         if self._has("vwap"):
+            anchor = self._params["vwap"].get("anchor", "Week")
+            source = self._params["vwap"].get("source", "HLC3")
+            vwap_label = f"{anchor} VWAP ({source})"
             blocks.append(
-                'plot(vwap_weekly, "Weekly VWAP", color=color.new(color.purple, 0), linewidth=2)'
+                f'plot(vwap_val, "{vwap_label}", color=color.new(color.purple, 0), linewidth=2)'
             )
 
         if self._has("fib"):
