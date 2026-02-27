@@ -1,5 +1,5 @@
 """
-app.py  —  Growth Signal Bot · Trading Dashboard
+app.py  —  Trade Analysis · Trading Dashboard
 Run with:  streamlit run backend/app.py
 """
 from __future__ import annotations
