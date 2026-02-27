@@ -883,7 +883,7 @@ def render_profiles_page(workspace_id: str = "default") -> None:
             rm_ticker = rc1.selectbox("Ticker to remove", sorted(overrides.keys()),
                                       key="rm_override_sel")
             if rc2.button("Remove", key="rm_override_btn"):
-                remove_ticker_override(rm_ticker)
+                remove_ticker_override(rm_ticker, workspace_id)
                 st.toast(f"Removed override for {rm_ticker}", icon="🗑")
                 st.rerun()
 
