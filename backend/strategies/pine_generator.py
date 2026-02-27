@@ -597,18 +597,19 @@ class PineScriptGenerator:
             ])
 
         if self.output_type != "indicator":
-            # Buy signal shapes — filtered by the Signal Display toggles
-            # show_buy_sigs / show_bounce_sigs / strong_only are Pine Script inputs
+            # Buy signal shapes — filtered by the Signal Display toggles.
+            # Using `and` instead of ternary-with-na avoids the Pine v6 type error
+            # ("simple na" vs "series bool"). plotshape(false, ...) draws nothing.
             blocks.append("")
             blocks.append(
-                '// Signal Display — use na to hide markers based on user toggles\n'
-                '_buy_show    = show_buy_sigs    ? (strong_only ? bull_strong : buy_signal) : na\n'
+                '// Signal Display — combine toggle booleans with signal booleans\n'
+                '_buy_show    = show_buy_sigs and (strong_only ? bull_strong : buy_signal)\n'
                 'plotshape(_buy_show, title="Buy", style=shape.triangleup, '
                 'location=location.belowbar, color=color.new(color.green, 0), size=size.normal)'
             )
             if self._has("ema20"):
                 blocks.append(
-                    '_bounce_show = show_bounce_sigs ? bounce_signal : na\n'
+                    '_bounce_show = show_bounce_sigs and bounce_signal\n'
                     'plotshape(_bounce_show, title="Bounce", style=shape.circle, '
                     'location=location.belowbar, color=color.new(color.aqua, 0), size=size.small)'
                 )
