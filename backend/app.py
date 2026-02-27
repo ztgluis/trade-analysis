@@ -788,7 +788,21 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                                                            max_value=10.0, value=1.5, step=0.1,
                                                            key="gen_param_atr_multiplier")
                 elif ind == "vwap":
-                    st.caption("No additional parameters for VWAP.")
+                    params["anchor"] = st.selectbox(
+                        "Anchor Period",
+                        options=["Session", "Week", "Month", "Quarter", "Year"],
+                        index=1,  # Week default
+                        key="gen_param_vwap_anchor",
+                        help="Session resets daily (uses ta.vwap built-in). "
+                             "Week/Month/Quarter/Year use a cumulative manual reset.",
+                    )
+                    params["source"] = st.selectbox(
+                        "Source",
+                        options=["HLC3", "HL2", "Close", "OHLC4"],
+                        index=0,  # HLC3 (typical price) default
+                        key="gen_param_vwap_source",
+                        help="HLC3 = (H+L+C)/3 · HL2 = (H+L)/2 · OHLC4 = (O+H+L+C)/4",
+                    )
                 elif ind == "fib":
                     params["swing"] = st.number_input("Swing Lookback", min_value=5, max_value=200,
                                                       value=50, key="gen_param_fib_swing")
