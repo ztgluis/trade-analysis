@@ -975,31 +975,35 @@ def render_strategies_page(workspace_id: str = "default") -> None:
         else:
             indicator_params = {}
 
-        # ── Entry mode, strategy name, timeframe ─────────────────────────────
-        st.markdown("**Entry Mode**")
+        # ── Entry mode (strategy only) ────────────────────────────────────────
         entry_mode_labels = {
             "All Signals":      "all_signals",
             "Buy Only":         "buy_only",
             "Strong Buy Only":  "strong_buy_only",
         }
-        entry_mode_label = st.radio(
-            "Entry mode",
-            options=list(entry_mode_labels.keys()),
-            captions=[
-                "Enter on any buy signal or EMA bounce",
-                "Enter only on scored buy signals",
-                "Enter only when buy signal AND bull score is strong",
-            ],
-            key="gen_entry_mode",
-            label_visibility="collapsed",
-        )
-        entry_mode = entry_mode_labels[entry_mode_label]
+        if not is_indicator_gen:
+            st.markdown("**Entry Mode**")
+            entry_mode_label = st.radio(
+                "Entry mode",
+                options=list(entry_mode_labels.keys()),
+                captions=[
+                    "Enter on any buy signal or EMA bounce",
+                    "Enter only on scored buy signals",
+                    "Enter only when buy signal AND bull score is strong",
+                ],
+                key="gen_entry_mode",
+                label_visibility="collapsed",
+            )
+            entry_mode = entry_mode_labels[entry_mode_label]
+        else:
+            entry_mode = "all_signals"  # unused for indicator scripts
 
         gen_col1, gen_col2 = st.columns(2)
         with gen_col1:
+            _default_script_name = "My Generated Indicator" if is_indicator_gen else "My Generated Strategy"
             strategy_name = st.text_input(
-                "Strategy Name",
-                value="My Generated Strategy",
+                "Script Name",
+                value=_default_script_name,
                 key="gen_strategy_name",
             )
         with gen_col2:
@@ -1014,10 +1018,12 @@ def render_strategies_page(workspace_id: str = "default") -> None:
         st.markdown("---")
 
         # ── Generate / Save buttons ───────────────────────────────────────────
+        _output_type = "indicator" if is_indicator_gen else "strategy"
+        _btn_gen_label = "Generate Pine Script" if not is_indicator_gen else "Generate Indicator Script"
         btn_c1, btn_c2 = st.columns(2)
         with btn_c1:
             gen_clicked = st.button(
-                "Generate Pine Script",
+                _btn_gen_label,
                 type="primary",
                 key="gen_generate_btn",
                 use_container_width=True,
@@ -1041,6 +1047,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                         strategy_name=strategy_name,
                         entry_mode=entry_mode,
                         timeframe=timeframe,
+                        output_type=_output_type,
                     )
                     code = gen.generate()
                     st.session_state["gen_code"] = code
@@ -1049,20 +1056,22 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                     name_clean = strategy_name.strip()
                     if name_clean:
                         metadata = {
-                            "profile_name": selected_profile_name,
+                            "profile_name": selected_profile_name if not is_indicator_gen else "—",
                             "indicators":   chosen_indicators,
-                            "entry_mode":   entry_mode,
+                            "entry_mode":   "—" if is_indicator_gen else entry_mode,
                             "timeframe":    timeframe,
                         }
                         supabase_db.save_strategy(name_clean, code, metadata, workspace_id)
-                        st.success(f"✅ Saved **{name_clean}** to the Library.")
+                        _saved_type = "indicator" if is_indicator_gen else "strategy"
+                        st.success(f"✅ Saved **{name_clean}** ({_saved_type}) to the Library.")
                     else:
-                        st.error("Enter a strategy name before saving.")
+                        st.error("Enter a script name before saving.")
 
         # ── Show results if code has been generated ───────────────────────────
         if st.session_state.get("gen_code"):
             code = st.session_state["gen_code"]
-            st.markdown("#### Generated Pine Script")
+            _gen_label = "Generated Indicator Script" if is_indicator_gen else "Generated Pine Script"
+            st.markdown(f"#### {_gen_label}")
 
             # Validate / lint
             gen_for_validate = PineScriptGenerator(
@@ -1072,6 +1081,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                 strategy_name=strategy_name,
                 entry_mode=entry_mode,
                 timeframe=timeframe,
+                output_type=_output_type,
             )
             is_valid, messages = gen_for_validate.validate()
 
