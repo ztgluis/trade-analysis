@@ -848,7 +848,7 @@ def render_profiles_page(workspace_id: str = "default") -> None:
                     "sl_pct":        p_sl,
                     "tp_pct":        p_tp,
                     "description":   p_desc.strip(),
-                })
+                }, workspace_id)
                 st.toast(f"Profile '{name_clean}' saved!", icon="✅")
                 st.rerun()
 
