@@ -478,34 +478,30 @@ class PineScriptGenerator:
 
         blocks.append("")
 
-        # ── bull_strong (for strong_buy_only mode) ────────────────────────────
-        # Count active gates as a proxy for score; reuse a simple sum
-        if self.entry_mode == "strong_buy_only":
-            # Provide a confirmations count — count of true gates beyond the first
-            confirm_parts = []
-            if self._has("macd"):
-                confirm_parts.append("(macd_gate ? 1 : 0)")
-            if self._has("adx"):
-                confirm_parts.append("(adx_gate ? 1 : 0)")
-            if self._has("sma200"):
-                confirm_parts.append("(trend_gate ? 1 : 0)")
-            if self._has("ema20"):
-                confirm_parts.append("(ema_gate ? 1 : 0)")
-            if self._has("vwap"):
-                confirm_parts.append("(vwap_gate ? 1 : 0)")
-            if self._has("volume"):
-                confirm_parts.append("(vol_gate ? 1 : 0)")
-            if self._has("rsi"):
-                confirm_parts.append("(rsi_gate ? 1 : 0)")
+        # ── bull_strong — always computed so the "Strong Buys Only" display
+        #    toggle can reference it regardless of entry_mode ──────────────────
+        confirm_parts = []
+        if self._has("macd"):
+            confirm_parts.append("(macd_gate ? 1 : 0)")
+        if self._has("adx"):
+            confirm_parts.append("(adx_gate ? 1 : 0)")
+        if self._has("sma200"):
+            confirm_parts.append("(trend_gate ? 1 : 0)")
+        if self._has("ema20"):
+            confirm_parts.append("(ema_gate ? 1 : 0)")
+        if self._has("vwap"):
+            confirm_parts.append("(vwap_gate ? 1 : 0)")
+        if self._has("volume"):
+            confirm_parts.append("(vol_gate ? 1 : 0)")
+        if self._has("rsi"):
+            confirm_parts.append("(rsi_gate ? 1 : 0)")
 
-            if confirm_parts:
-                sum_expr = " + ".join(confirm_parts)
-                blocks.append(f"confirm_count = {sum_expr}")
-                blocks.append("bull_strong   = buy_signal and confirm_count >= 2")
-            else:
-                blocks.append("bull_strong = buy_signal")
+        if confirm_parts:
+            sum_expr = " + ".join(confirm_parts)
+            blocks.append(f"confirm_count = {sum_expr}")
+            blocks.append("bull_strong   = buy_signal and confirm_count >= 2")
         else:
-            blocks.append("bull_strong = buy_signal and score_strong >= score_strong  // placeholder")
+            blocks.append("bull_strong = buy_signal")
 
         blocks.append("")
 
