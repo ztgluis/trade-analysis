@@ -886,6 +886,124 @@ def render_strategies_page(workspace_id: str = "default") -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Dashboard Page
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_dashboard_page(workspace_id: str = "default") -> None:
+    # A. Ensure watchlist is loaded
+    if "watchlist" not in st.session_state:
+        wl = supabase_db.get_watchlist(workspace_id)
+        st.session_state.watchlist = wl if wl else DEFAULT_WATCHLIST.copy()
+
+    # B. Top controls bar
+    col_add, col_run, col_hz = st.columns([4, 2, 2])
+    with col_add:
+        with st.form("add_ticker_form", clear_on_submit=True):
+            c1, c2 = st.columns([5, 1])
+            new_sym = c1.text_input("", placeholder="Add ticker…  e.g. AAPL",
+                                    label_visibility="collapsed", key="add_ticker_input")
+            if c2.form_submit_button("＋", use_container_width=True):
+                sym = new_sym.upper().strip()
+                if sym and sym not in st.session_state.watchlist:
+                    st.session_state.watchlist.append(sym)
+                    supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
+                    st.rerun()
+    with col_run:
+        run_all = st.button("▶ Run Analysis", type="primary", use_container_width=True)
+    with col_hz:
+        horizon_label = st.selectbox(
+            "Horizon", list(HORIZON_MAP.keys()), index=2,
+            key="horizon_select", label_visibility="collapsed",
+        )
+        horizon_td = HORIZON_MAP[horizon_label]
+
+    # C. Ticker chips row
+    to_remove = None
+    watchlist = st.session_state.watchlist
+    if watchlist:
+        n = len(watchlist)
+        cols = st.columns(n * 2)
+        for i, sym in enumerate(watchlist):
+            r = st.session_state.get("results", {}).get(sym)
+            if r and not r.get("error"):
+                color_key = r.get("color", "grey")
+                emoji = {"green": "🟢", "lime": "🟡", "red": "🔴",
+                         "grey": "⚪", "yellow": "🟡"}.get(color_key, "⚪")
+            else:
+                emoji = "⚪"
+            if cols[i * 2].button(f"{emoji} {sym}", key=f"chip_{sym}",
+                                   use_container_width=True):
+                st.session_state["selected_ticker"] = sym
+                st.rerun()
+            if cols[i * 2 + 1].button("×", key=f"rm_{sym}",
+                                       use_container_width=True):
+                to_remove = sym
+    if to_remove:
+        st.session_state.watchlist.remove(to_remove)
+        supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
+        st.session_state.get("results", {}).pop(to_remove, None)
+        if st.session_state.get("selected_ticker") == to_remove:
+            st.session_state.pop("selected_ticker", None)
+        st.rerun()
+
+    # D. Analysis logic
+    results = st.session_state.get("results", {})
+    if run_all or not results:
+        results = {}
+        prog = st.progress(0, text="Running analysis…")
+        for i, ticker in enumerate(st.session_state.watchlist):
+            prog.progress((i + 1) / len(st.session_state.watchlist),
+                          text=f"Analyzing {ticker}…")
+            results[ticker] = analyze(ticker, horizon_td=horizon_td)
+        prog.empty()
+        st.session_state["results"]  = results
+        st.session_state["horizon"]  = horizon_td
+        st.session_state["last_run"] = datetime.datetime.now().strftime("%H:%M:%S")
+
+    if st.session_state.get("horizon") != horizon_td and results:
+        st.session_state.pop("results", None)
+        st.session_state.pop("selected_ticker", None)
+        st.rerun()
+
+    # E. Last run caption
+    if st.session_state.get("last_run"):
+        st.caption(f"Last run: {st.session_state['last_run']}")
+
+    # F. Results grid
+    st.divider()
+    render_dashboard(results)
+
+    # G. Deep dive
+    st.divider()
+    sel = st.session_state.get("selected_ticker")
+    if not sel:
+        return
+    r_base = results.get(sel, {})
+    if r_base.get("error"):
+        st.error(r_base["error"])
+        return
+
+    # Profile override cache
+    chosen_profile_name = st.session_state.get(f"profile_override_{sel}", "(auto)")
+    all_p = get_all_profiles(workspace_id)
+    override_profile = None
+    if chosen_profile_name != "(auto)":
+        override_profile = all_p.get(chosen_profile_name)
+
+    cache_key = f"oc_{sel}_{chosen_profile_name}_{horizon_td}"
+    if override_profile is not None:
+        if st.session_state.get("override_cache", {}).get("key") != cache_key:
+            r_show = analyze(sel, horizon_td=horizon_td, profile_override=override_profile)
+            st.session_state["override_cache"] = {"key": cache_key, "result": r_show}
+        else:
+            r_show = st.session_state["override_cache"]["result"]
+    else:
+        r_show = r_base
+
+    render_deep_dive(r_show)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Profile Settings Page
 # ─────────────────────────────────────────────────────────────────────────────
 
