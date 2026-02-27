@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_decide.py  —  Growth Signal Bot Decision Engine  (v2 — earnings + macro)
+run_decide.py  —  Trade Analysis Decision Engine  (v2 — earnings + macro)
 
 Answers the question: "Given the current market state for TICKER,
 what does the strategy's data say about holding vs exiting over HORIZON trading days?"
