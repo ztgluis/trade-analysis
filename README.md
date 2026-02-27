@@ -87,6 +87,12 @@ CREATE TABLE ticker_overrides (
   updated_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(ticker)
 );
+
+CREATE TABLE watchlist (
+  id BIGSERIAL PRIMARY KEY,
+  tickers JSONB NOT NULL DEFAULT '[]',
+  updated_at TIMESTAMP DEFAULT NOW()
+);
 ```
 
 **Step 3: Local Development Setup**
