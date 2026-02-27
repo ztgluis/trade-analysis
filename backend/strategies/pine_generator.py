@@ -344,36 +344,9 @@ class PineScriptGenerator:
             blocks.append("atr_val    = ta.atr(atr_len)")
             blocks.append("atr_buffer = atr_val * atr_mult")
 
-        # VWAP — manual weekly-resetting implementation (mirrors growth_signal_bot_v4.pine)
+        # VWAP — anchor-configurable implementation
         if self._has("vwap"):
-            blocks.append(
-                "\n".join([
-                    "",
-                    "// Weekly VWAP (resets every new week)",
-                    "hlc3     = (high + low + close) / 3",
-                    "new_week = weekofyear != weekofyear[1] or year != year[1]",
-                    "",
-                    "var float wk_vol_px  = 0.0",
-                    "var float wk_vol     = 0.0",
-                    "var float wk_sum_sq  = 0.0",
-                    "var int   wk_bar_cnt = 0",
-                    "",
-                    "if new_week",
-                    "    wk_vol_px  := 0.0",
-                    "    wk_vol     := 0.0",
-                    "    wk_sum_sq  := 0.0",
-                    "    wk_bar_cnt := 0",
-                    "",
-                    "wk_vol_px  += hlc3 * volume",
-                    "wk_vol     += volume",
-                    "wk_bar_cnt += 1",
-                    "",
-                    "vwap_weekly = wk_vol_px / wk_vol",
-                    "wk_sum_sq  += math.pow(hlc3 - vwap_weekly, 2)",
-                    "wk_stdev    = math.sqrt(wk_sum_sq / wk_bar_cnt)",
-                    "vwap_w_lo1  = vwap_weekly - wk_stdev",
-                ])
-            )
+            blocks.append(self._render_vwap())
 
         # Fibonacci
         if self._has("fib"):
