@@ -315,15 +315,16 @@ class PineScriptGenerator:
                 ])
             )
 
-        # Signal scoring thresholds (always present)
-        blocks.append(
-            "\n".join([
-                "",
-                "// Signal Scoring",
-                'score_strong   = input.int(11, "Strong Signal Min Score",   group="Signal Scoring", minval=1)',
-                'score_moderate = input.int(8,  "Moderate Signal Min Score", group="Signal Scoring", minval=1)',
-            ])
-        )
+        if self.output_type != "indicator":
+            # Signal scoring thresholds (strategies only)
+            blocks.append(
+                "\n".join([
+                    "",
+                    "// Signal Scoring",
+                    'score_strong   = input.int(11, "Strong Signal Min Score",   group="Signal Scoring", minval=1)',
+                    'score_moderate = input.int(8,  "Moderate Signal Min Score", group="Signal Scoring", minval=1)',
+                ])
+            )
 
         return "\n".join(blocks)
 
