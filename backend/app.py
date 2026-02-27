@@ -795,7 +795,7 @@ def render_profiles_page(workspace_id: str = "default") -> None:
                         st.caption(p["description"])
                     if st.button(f"🗑 Delete  '{cname}'", key=f"del_profile_{cname}",
                                  type="secondary"):
-                        delete_custom_profile(cname)
+                        delete_custom_profile(cname, workspace_id)
                         st.toast(f"Deleted profile '{cname}'", icon="🗑")
                         st.rerun()
             st.markdown("---")
