@@ -173,28 +173,28 @@ DEFAULT_PROFILE = "_growth"
 # Public read API
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_custom_profiles() -> dict[str, dict]:
+def get_custom_profiles(workspace_id: str = "default") -> dict[str, dict]:
     """Return only the user-created custom profiles keyed by name."""
-    return supabase_db.get_custom_profiles()
+    return supabase_db.get_custom_profiles(workspace_id)
 
 
-def get_ticker_overrides() -> dict[str, str]:
+def get_ticker_overrides(workspace_id: str = "default") -> dict[str, str]:
     """Return the user-defined ticker → profile_key override map."""
-    return supabase_db.get_ticker_overrides()
+    return supabase_db.get_ticker_overrides(workspace_id)
 
 
-def get_all_profiles() -> dict[str, dict]:
+def get_all_profiles(workspace_id: str = "default") -> dict[str, dict]:
     """Return merged dict of built-in + custom profiles.
 
     Custom profiles are keyed by their user-chosen name string.
     If a custom profile shares a key with a built-in, it overrides it.
     """
     combined = dict(PROFILES)
-    combined.update(get_custom_profiles())
+    combined.update(get_custom_profiles(workspace_id))
     return combined
 
 
-def get_profile(ticker: str) -> dict:
+def get_profile(ticker: str, workspace_id: str = "default") -> dict:
     """Return the parameter profile dict for a given ticker symbol.
 
     Priority:
@@ -203,8 +203,8 @@ def get_profile(ticker: str) -> dict:
       3. DEFAULT_PROFILE (_growth)
     """
     t            = ticker.upper()
-    all_profiles = get_all_profiles()
-    overrides    = get_ticker_overrides()
+    all_profiles = get_all_profiles(workspace_id)
+    overrides    = get_ticker_overrides(workspace_id)
 
     # 1. Custom ticker override
     if t in overrides:
@@ -217,13 +217,13 @@ def get_profile(ticker: str) -> dict:
     return PROFILES.get(key, PROFILES[DEFAULT_PROFILE])
 
 
-def profile_key(ticker: str) -> str:
+def profile_key(ticker: str, workspace_id: str = "default") -> str:
     """Return the profile key string (e.g. '_metals') for a ticker.
 
     Priority mirrors get_profile(): overrides → TICKER_MAP → DEFAULT_PROFILE.
     """
     t         = ticker.upper()
-    overrides = get_ticker_overrides()
+    overrides = get_ticker_overrides(workspace_id)
     if t in overrides:
         return overrides[t]
     return TICKER_MAP.get(t, DEFAULT_PROFILE)
@@ -233,25 +233,25 @@ def profile_key(ticker: str) -> str:
 # Public write API  (custom profiles + ticker overrides)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def save_custom_profile(name: str, profile: dict) -> None:
+def save_custom_profile(name: str, profile: dict, workspace_id: str = "default") -> None:
     """Create or update a custom profile by name.
 
     profile should contain at minimum:
         category, rsi_bull_min, rsi_bull_max, adx_threshold, sl_pct, tp_pct
     """
-    supabase_db.save_custom_profile(name, profile)
+    supabase_db.save_custom_profile(name, profile, workspace_id)
 
 
-def delete_custom_profile(name: str) -> None:
+def delete_custom_profile(name: str, workspace_id: str = "default") -> None:
     """Delete a custom profile and remove any ticker overrides pointing to it."""
-    supabase_db.delete_custom_profile(name)
+    supabase_db.delete_custom_profile(name, workspace_id)
 
 
-def set_ticker_override(ticker: str, profile_key_str: str) -> None:
+def set_ticker_override(ticker: str, profile_key_str: str, workspace_id: str = "default") -> None:
     """Override the profile used for a specific ticker symbol."""
-    supabase_db.set_ticker_override(ticker, profile_key_str)
+    supabase_db.set_ticker_override(ticker, profile_key_str, workspace_id)
 
 
-def remove_ticker_override(ticker: str) -> None:
+def remove_ticker_override(ticker: str, workspace_id: str = "default") -> None:
     """Remove a ticker override, reverting to auto-detection."""
-    supabase_db.remove_ticker_override(ticker)
+    supabase_db.remove_ticker_override(ticker, workspace_id)
