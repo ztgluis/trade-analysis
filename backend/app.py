@@ -328,6 +328,7 @@ def render_sidebar() -> tuple[list[str], int, bool]:
         new_sym = st.text_input("Add symbol", placeholder="e.g. AAPL").upper().strip()
         if st.form_submit_button("+ Add") and new_sym and new_sym not in st.session_state.watchlist:
             st.session_state.watchlist.append(new_sym)
+            save_watchlist(st.session_state.watchlist)
             st.rerun()
 
     st.sidebar.divider()
