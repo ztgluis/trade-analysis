@@ -1126,6 +1126,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
     # Tab 2 — Library
     # ══════════════════════════════════════════════════════════════════════
     with tab_lib:
+        st.query_params["gt"] = "library"
 
         # Split DEFAULT_STRATEGIES and user strategies by type
         bi_strats = [s for s in DEFAULT_STRATEGIES if not s.get("is_indicator")]
