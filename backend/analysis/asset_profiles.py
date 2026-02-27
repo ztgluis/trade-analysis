@@ -175,12 +175,12 @@ DEFAULT_PROFILE = "_growth"
 
 def get_custom_profiles() -> dict[str, dict]:
     """Return only the user-created custom profiles keyed by name."""
-    return _load_custom_data()["profiles"]
+    return supabase_db.get_custom_profiles()
 
 
 def get_ticker_overrides() -> dict[str, str]:
     """Return the user-defined ticker → profile_key override map."""
-    return _load_custom_data()["ticker_overrides"]
+    return supabase_db.get_ticker_overrides()
 
 
 def get_all_profiles() -> dict[str, dict]:
