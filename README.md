@@ -212,7 +212,8 @@ trader-bot/
 ├── backend/
 │   ├── analysis/
 │   │   ├── decision_engine.py       # Core analysis: buy/sell scoring, verdicts
-│   │   └── asset_profiles.py        # Profile system + per-ticker overrides
+│   │   ├── asset_profiles.py        # Profile system + per-ticker overrides
+│   │   └── supabase_db.py           # Supabase persistence layer (workspace-scoped)
 │   │
 │   ├── backtester/
 │   │   ├── engine.py                # Backtest runner
@@ -222,9 +223,12 @@ trader-bot/
 │   │   └── portfolio.py             # Portfolio simulation
 │   │
 │   ├── strategies/
-│   │   └── growth_signal_bot.py     # Growth stock signal strategy
+│   │   ├── base.py                  # Abstract BaseStrategy interface
+│   │   ├── long_signal_strategy.py  # LongSignalStrategy v4.3 (main strategy)
+│   │   ├── growth_signal_bot.py     # Backwards-compat shim → LongSignalStrategy
+│   │   └── pine_generator.py        # Pine Script v6 code generator
 │   │
-│   ├── app.py                       # Streamlit dashboard
+│   ├── app.py                       # Streamlit dashboard (Dashboard / Profiles / Strategies)
 │   │
 │   ├── run_decide.py                # Long decision analysis
 │   ├── run_decide_short.py          # Short decision analysis
@@ -233,12 +237,14 @@ trader-bot/
 │   ├── run_backtest.py              # Backtester runner
 │   └── requirements.txt
 │
-├── pine-scripts/                    # TradingView Pine Script indicators (archived)
-│   ├── abnb_signal_bot_v3.pine
-│   └── swing_signal_bot_v1.pine
+├── pine-scripts/                    # TradingView Pine Script strategies
+│   ├── growth_signal_bot_v4.pine    # Daily strategy v4.3
+│   ├── growth_signal_bot_1h_v1.pine # 1H strategy
+│   ├── swing_signal_bot_v1.pine
+│   └── lint_pine.py                 # Pine Script linter / validator
 │
 ├── docs/
-│   └── (strategy notes)
+│   └── supabase_workspace_migration.sql  # Run if upgrading from pre-workspace schema
 │
 └── README.md
 ```
