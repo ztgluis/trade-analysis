@@ -173,12 +173,12 @@ Each visitor gets an isolated **workspace** — their own watchlist, custom prof
 The app has three sections, accessible via the left sidebar radio:
 
 ### 📊 Dashboard
-- **Ticker chips**: All watchlist symbols shown across the top with live verdict colors (🟢 🟡 🔴). Click a chip to deep-dive; click × to remove.
-- **Add ticker**: Text input to add new symbols to your watchlist
-- **▶ Run Analysis**: Re-runs analysis on all watchlist tickers
-- **⏱ Horizon**: Select analysis horizon (1 week → 6 months) — affects scoring calibration and base rates
-- **Results grid**: Summary table with verdict, scores, regime, risk/reward for all tickers
-- **Deep Dive** (click any row or chip): Per-ticker detailed analysis
+- **Results grid**: Summary table showing verdict, scores, regime, and risk/reward for all watchlist tickers. Click any row to open the deep dive below.
+- **✕ Remove**: When a row is selected, a remove button appears below the table to delete that ticker from your watchlist.
+- **Add ticker** (bottom bar): Type a symbol and press ＋ — the new ticker is immediately analyzed and selected.
+- **▶ Run Analysis** (bottom bar): Re-runs analysis on all watchlist tickers.
+- **⏱ Horizon** (bottom bar): Select analysis horizon (1 week → 6 months) — affects scoring calibration and base rates.
+- **Deep Dive** (click any row): Per-ticker detailed analysis panel below the table.
 
 ### ⚙️ Profiles
 
