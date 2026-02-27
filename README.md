@@ -222,10 +222,14 @@ The app has three sections, accessible via the left sidebar radio:
 
 **Tab 2 — 📚 Library**
 - Browse all saved strategies in a sortable table (Name, Profile, Indicators, Entry Mode, Timeframe, Saved date)
-- Click any row to reveal per-strategy actions:
+- Click any row to reveal four per-strategy actions:
   - **📋 View Code** — view full Pine Script source + download `.pine`
   - **✏️ Rename** — change the strategy name
   - **🗑️ Delete** — permanently remove the strategy
+  - **🧪 Backtest** — run the Python backtester against any ticker:
+    - Enter a ticker symbol and select history length (1y / 2y / 3y / 5y)
+    - Runs `GrowthSignalBot` configured with the strategy's profile (RSI zone, ADX threshold, SL/TP %) and entry mode
+    - Displays 6 key metrics: Total Return vs B&H, CAGR, Sharpe, Max Drawdown, Win Rate, Profit Factor
 - Saved strategies are workspace-scoped — each workspace has its own library
 
 ### Deep Dive (Per-Ticker)
