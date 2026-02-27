@@ -350,7 +350,7 @@ def render_sidebar(workspace_id: str = "default") -> tuple[list[str], int, bool]
 
     if to_remove:
         st.session_state.watchlist.remove(to_remove)
-        supabase_db.save_watchlist(st.session_state.watchlist)
+        supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
         st.session_state.get("results", {}).pop(to_remove, None)
         if st.session_state.get("selected_ticker") == to_remove:
             st.session_state.pop("selected_ticker", None)
@@ -361,7 +361,7 @@ def render_sidebar(workspace_id: str = "default") -> tuple[list[str], int, bool]
         new_sym = st.text_input("Add symbol", placeholder="e.g. AAPL").upper().strip()
         if st.form_submit_button("+ Add") and new_sym and new_sym not in st.session_state.watchlist:
             st.session_state.watchlist.append(new_sym)
-            supabase_db.save_watchlist(st.session_state.watchlist)
+            supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
             st.rerun()
 
     st.sidebar.divider()
