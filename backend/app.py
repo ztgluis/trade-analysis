@@ -706,6 +706,93 @@ def render_deep_dive(r: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Library helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _lib_backtest_expander(strat: dict, key_pfx: str) -> None:
+    """Render the 🧪 Backtest expander for any strategy dict.
+    Module-level so Streamlit doesn't re-create it on every rerun."""
+    with st.expander("🧪 Backtest", expanded=False):
+        _bt_ticker = st.text_input(
+            "Ticker", value="AAPL",
+            key=f"{key_pfx}_bt_ticker", placeholder="e.g. TSLA",
+        ).upper().strip()
+        _bt_period = st.selectbox(
+            "History", ["1y", "2y", "3y", "5y"],
+            index=1, key=f"{key_pfx}_bt_period",
+        )
+        if st.button(
+            "▶ Run Backtest", key=f"{key_pfx}_bt_run",
+            type="primary", use_container_width=True,
+        ):
+            if not _bt_ticker:
+                st.error("Enter a ticker first.")
+            else:
+                _em_raw = strat.get("entry_mode") or "All Signals"
+                _em_map = {
+                    "all_signals": "All Signals", "buy_only": "Buy Only",
+                    "strong_buy_only": "Strong Buy Only",
+                    "All Signals": "All Signals", "Buy Only": "Buy Only",
+                    "Strong Buy Only": "Strong Buy Only",
+                }
+                _bt_em = _em_map.get(_em_raw, "All Signals")
+                _bt_prof_name = strat.get("profile_name") or ""
+                _bt_prof = PROFILES.get("_growth", {})
+                for _p in PROFILES.values():
+                    if _p.get("category") == _bt_prof_name:
+                        _bt_prof = _p
+                        break
+                with st.spinner(f"Running backtest on {_bt_ticker}…"):
+                    try:
+                        _df_bt = _bt_fetch(_bt_ticker, period=_bt_period, interval="1d")
+                        if _df_bt is None or len(_df_bt) < 60:
+                            st.error(f"Not enough data for {_bt_ticker}.")
+                        else:
+                            _sbt = GrowthSignalBot(
+                                entry_mode    = _bt_em,
+                                sl_pct        = _bt_prof.get("sl_pct",        5.0),
+                                tp_pct        = _bt_prof.get("tp_pct",        15.0),
+                                rsi_bull_min  = _bt_prof.get("rsi_bull_min",  42),
+                                rsi_bull_max  = _bt_prof.get("rsi_bull_max",  62),
+                                adx_threshold = _bt_prof.get("adx_threshold", 20.0),
+                            )
+                            _eng = BacktestEngine(
+                                strategy=_sbt, data=_df_bt,
+                                initial_capital=10_000, commission_pct=0.001,
+                            )
+                            _res    = _eng.run()
+                            _eq     = _res.equity
+                            _trades = _res.trades
+                            _prices = _df_bt["close"]
+                            _n_t    = len(_trades)
+                            _n_w    = sum(1 for t in _trades if (t.pnl_pct or 0) > 0)
+                            _r_tot  = bt_m.total_return(_eq)
+                            _r_bah  = bt_m.buy_hold_return(_prices)
+                            _r_cagr = bt_m.cagr(_eq)
+                            _r_dd   = bt_m.max_drawdown(_eq)
+                            _r_sh   = bt_m.sharpe_ratio(_eq)
+                            _r_wr   = bt_m.win_rate(_trades)
+                            _r_pf   = bt_m.profit_factor(_trades)
+                            st.markdown("**Results**")
+                            _mc1, _mc2, _mc3 = st.columns(3)
+                            _mc1.metric("Total Return", f"{_r_tot*100:+.1f}%",
+                                        delta=f"B&H {_r_bah*100:+.1f}%")
+                            _mc2.metric("CAGR",   f"{_r_cagr*100:+.1f}%")
+                            _mc3.metric("Sharpe", f"{_r_sh:.2f}")
+                            _mc4, _mc5, _mc6 = st.columns(3)
+                            _mc4.metric("Max Drawdown",  f"{_r_dd*100:.1f}%")
+                            _mc5.metric("Win Rate", f"{_r_wr*100:.1f}%",
+                                        delta=f"{_n_w}W / {_n_t - _n_w}L")
+                            _mc6.metric("Profit Factor", f"{_r_pf:.2f}")
+                            st.caption(
+                                f"{_n_t} trades · {_bt_period} · "
+                                f"{_bt_prof_name or 'default profile'} · {_bt_em}"
+                            )
+                    except Exception as _bt_err:
+                        st.error(f"Backtest error: {_bt_err}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Strategies Page
 # ─────────────────────────────────────────────────────────────────────────────
 
