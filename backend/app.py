@@ -994,7 +994,149 @@ def render_strategies_page(workspace_id: str = "default") -> None:
     # Tab 2 — Library
     # ══════════════════════════════════════════════════════════════════════
     with tab_lib:
-        st.markdown("#### 📚 Saved Strategies")
+
+        # ── Shared backtest widget (used by both Built-in and Your Library) ───
+        def _bt_expander(strat: dict, key_pfx: str) -> None:
+            """Render the 🧪 Backtest expander for any strategy dict."""
+            with st.expander("🧪 Backtest", expanded=False):
+                _bt_ticker = st.text_input(
+                    "Ticker", value="AAPL",
+                    key=f"{key_pfx}_bt_ticker", placeholder="e.g. TSLA",
+                ).upper().strip()
+                _bt_period = st.selectbox(
+                    "History", ["1y", "2y", "3y", "5y"],
+                    index=1, key=f"{key_pfx}_bt_period",
+                )
+                if st.button(
+                    "▶ Run Backtest", key=f"{key_pfx}_bt_run",
+                    type="primary", use_container_width=True,
+                ):
+                    if not _bt_ticker:
+                        st.error("Enter a ticker first.")
+                    else:
+                        _em_raw = strat.get("entry_mode") or "All Signals"
+                        _em_map = {
+                            "all_signals": "All Signals", "buy_only": "Buy Only",
+                            "strong_buy_only": "Strong Buy Only",
+                            "All Signals": "All Signals", "Buy Only": "Buy Only",
+                            "Strong Buy Only": "Strong Buy Only",
+                        }
+                        _bt_em = _em_map.get(_em_raw, "All Signals")
+                        _bt_prof_name = strat.get("profile_name") or ""
+                        _bt_prof = PROFILES.get("_growth", {})
+                        for _p in PROFILES.values():
+                            if _p.get("category") == _bt_prof_name:
+                                _bt_prof = _p
+                                break
+                        with st.spinner(f"Running backtest on {_bt_ticker}…"):
+                            try:
+                                _df_bt = _bt_fetch(_bt_ticker, period=_bt_period, interval="1d")
+                                if _df_bt is None or len(_df_bt) < 60:
+                                    st.error(f"Not enough data for {_bt_ticker}.")
+                                else:
+                                    _sbt = GrowthSignalBot(
+                                        entry_mode    = _bt_em,
+                                        sl_pct        = _bt_prof.get("sl_pct",        5.0),
+                                        tp_pct        = _bt_prof.get("tp_pct",        15.0),
+                                        rsi_bull_min  = _bt_prof.get("rsi_bull_min",  42),
+                                        rsi_bull_max  = _bt_prof.get("rsi_bull_max",  62),
+                                        adx_threshold = _bt_prof.get("adx_threshold", 20.0),
+                                    )
+                                    _eng = BacktestEngine(
+                                        strategy=_sbt, data=_df_bt,
+                                        initial_capital=10_000, commission_pct=0.001,
+                                    )
+                                    _res    = _eng.run()
+                                    _eq     = _res.equity
+                                    _trades = _res.trades
+                                    _prices = _df_bt["close"]
+                                    _n_t    = len(_trades)
+                                    _n_w    = sum(1 for t in _trades if (t.pnl_pct or 0) > 0)
+                                    _r_tot  = bt_m.total_return(_eq)
+                                    _r_bah  = bt_m.buy_hold_return(_prices)
+                                    _r_cagr = bt_m.cagr(_eq)
+                                    _r_dd   = bt_m.max_drawdown(_eq)
+                                    _r_sh   = bt_m.sharpe_ratio(_eq)
+                                    _r_wr   = bt_m.win_rate(_trades)
+                                    _r_pf   = bt_m.profit_factor(_trades)
+                                    st.markdown("**Results**")
+                                    _mc1, _mc2, _mc3 = st.columns(3)
+                                    _mc1.metric("Total Return", f"{_r_tot*100:+.1f}%",
+                                                delta=f"B&H {_r_bah*100:+.1f}%")
+                                    _mc2.metric("CAGR",   f"{_r_cagr*100:+.1f}%")
+                                    _mc3.metric("Sharpe", f"{_r_sh:.2f}")
+                                    _mc4, _mc5, _mc6 = st.columns(3)
+                                    _mc4.metric("Max Drawdown",  f"{_r_dd*100:.1f}%")
+                                    _mc5.metric("Win Rate", f"{_r_wr*100:.1f}%",
+                                                delta=f"{_n_w}W / {_n_t - _n_w}L")
+                                    _mc6.metric("Profit Factor", f"{_r_pf:.2f}")
+                                    st.caption(
+                                        f"{_n_t} trades · {_bt_period} · "
+                                        f"{_bt_prof_name or 'default profile'} · {_bt_em}"
+                                    )
+                            except Exception as _bt_err:
+                                st.error(f"Backtest error: {_bt_err}")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # Section 1 — Built-in Strategies  (read-only)
+        # ══════════════════════════════════════════════════════════════════════
+        st.markdown("#### 🔒 Built-in Strategies")
+        st.caption(
+            "Pre-built strategies shipped with the app — read-only.  "
+            "Use **🧪 Backtest** to test against any ticker, or **📋 View Code** "
+            "to copy into TradingView."
+        )
+
+        bi_rows = []
+        for s in DEFAULT_STRATEGIES:
+            inds = s.get("indicators", [])
+            inds_str = ", ".join(i.upper() for i in inds) if isinstance(inds, list) else str(inds)
+            bi_rows.append({
+                "Name":       s["name"],
+                "Profile":    s["profile_name"],
+                "Indicators": inds_str or "—",
+                "Entry":      s["entry_mode"],
+                "TF":         s["timeframe"],
+            })
+
+        bi_event = st.dataframe(
+            pd.DataFrame(bi_rows),
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="lib_builtin_df",
+        )
+
+        bi_sel = bi_event.selection.rows if bi_event.selection else []
+        if bi_sel:
+            bi_idx   = bi_sel[0]
+            bi_strat = DEFAULT_STRATEGIES[bi_idx]
+            bi_name  = bi_strat["name"]
+            bi_code  = bi_strat["code"]
+            st.markdown(f"**Selected:** {bi_name}  🔒 *built-in*")
+            bi_c1, bi_c2 = st.columns(2)
+            with bi_c1:
+                with st.expander("📋 View Code", expanded=False):
+                    st.code(bi_code, language="")
+                    st.download_button(
+                        "⬇️ Download .pine",
+                        data=bi_code,
+                        file_name=bi_name.replace(" ", "_") + ".pine",
+                        mime="text/plain",
+                        key=f"bi_dl_{bi_idx}",
+                    )
+            with bi_c2:
+                _bt_expander(bi_strat, f"bi_{bi_idx}")
+        else:
+            st.caption("↑ Click a built-in strategy to view its code or run a backtest.")
+
+        st.markdown("---")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # Section 2 — Your Library  (full CRUD)
+        # ══════════════════════════════════════════════════════════════════════
+        st.markdown("#### 📚 Your Library")
 
         strategies = supabase_db.get_saved_strategies(workspace_id)
 
@@ -1005,7 +1147,6 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                 "and click **💾 Save to Library**."
             )
         else:
-            # ── Summary table ─────────────────────────────────────────────────
             lib_rows = []
             for s in strategies:
                 inds = s.get("indicators", [])
@@ -1028,9 +1169,8 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                     "Saved":      created or "—",
                 })
 
-            lib_df = pd.DataFrame(lib_rows)
             lib_event = st.dataframe(
-                lib_df,
+                pd.DataFrame(lib_rows),
                 use_container_width=True,
                 hide_index=True,
                 on_select="rerun",
@@ -1038,10 +1178,9 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                 key="lib_df",
             )
 
-            # ── Action area for selected strategy ─────────────────────────────
             sel_rows = lib_event.selection.rows if lib_event.selection else []
             if sel_rows:
-                sel_idx  = sel_rows[0]
+                sel_idx   = sel_rows[0]
                 sel_strat = strategies[sel_idx]
                 sel_name  = sel_strat.get("name", "")
                 sel_code  = sel_strat.get("code", "")
@@ -1055,18 +1194,17 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                         dl_fn = (sel_name.replace(" ", "_") or "strategy") + ".pine"
                         st.download_button(
                             "⬇️ Download .pine",
-                            data=sel_code,
-                            file_name=dl_fn,
-                            mime="text/plain",
-                            key=f"lib_dl_{sel_idx}",
+                            data=sel_code, file_name=dl_fn,
+                            mime="text/plain", key=f"usr_dl_{sel_idx}",
                         )
 
                 with act_c2:
                     with st.expander("✏️ Rename", expanded=False):
                         new_name = st.text_input(
-                            "New name", value=sel_name, key=f"lib_rename_input_{sel_idx}"
+                            "New name", value=sel_name,
+                            key=f"usr_rename_input_{sel_idx}",
                         )
-                        if st.button("✅ Apply", key=f"lib_rename_btn_{sel_idx}"):
+                        if st.button("✅ Apply", key=f"usr_rename_btn_{sel_idx}"):
                             new_name_clean = new_name.strip()
                             if new_name_clean and new_name_clean != sel_name:
                                 supabase_db.rename_strategy(sel_name, new_name_clean, workspace_id)
@@ -1082,7 +1220,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                         st.warning(f"Permanently delete **{sel_name}**?")
                         if st.button(
                             "🗑️ Confirm Delete",
-                            key=f"lib_del_btn_{sel_idx}",
+                            key=f"usr_del_btn_{sel_idx}",
                             type="primary",
                         ):
                             supabase_db.delete_strategy(sel_name, workspace_id)
@@ -1090,111 +1228,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                             st.rerun()
 
                 with act_c4:
-                    with st.expander("🧪 Backtest", expanded=False):
-                        bt_ticker = st.text_input(
-                            "Ticker",
-                            value="AAPL",
-                            key=f"lib_bt_ticker_{sel_idx}",
-                            placeholder="e.g. TSLA",
-                        ).upper().strip()
-                        bt_period = st.selectbox(
-                            "History",
-                            ["1y", "2y", "3y", "5y"],
-                            index=1,
-                            key=f"lib_bt_period_{sel_idx}",
-                        )
-
-                        if st.button(
-                            "▶ Run Backtest",
-                            key=f"lib_bt_run_{sel_idx}",
-                            type="primary",
-                            use_container_width=True,
-                        ):
-                            if not bt_ticker:
-                                st.error("Enter a ticker first.")
-                            else:
-                                # ── Map stored entry_mode to GrowthSignalBot value ────
-                                _em_raw = (sel_strat.get("entry_mode") or "All Signals")
-                                _em_map = {
-                                    "all_signals":      "All Signals",
-                                    "buy_only":         "Buy Only",
-                                    "strong_buy_only":  "Strong Buy Only",
-                                    "All Signals":      "All Signals",
-                                    "Buy Only":         "Buy Only",
-                                    "Strong Buy Only":  "Strong Buy Only",
-                                }
-                                bt_entry_mode = _em_map.get(_em_raw, "All Signals")
-
-                                # ── Look up profile params ────────────────────────────
-                                _stored_profile = sel_strat.get("profile_name") or ""
-                                _bt_profile = PROFILES.get("_growth", {})   # default
-                                for _p in PROFILES.values():
-                                    if _p.get("category") == _stored_profile:
-                                        _bt_profile = _p
-                                        break
-
-                                with st.spinner(f"Running backtest on {bt_ticker}…"):
-                                    try:
-                                        _df_bt = _bt_fetch(
-                                            bt_ticker, period=bt_period, interval="1d"
-                                        )
-                                        if _df_bt is None or len(_df_bt) < 60:
-                                            st.error(f"Not enough data for {bt_ticker}.")
-                                        else:
-                                            _strat_bt = GrowthSignalBot(
-                                                entry_mode    = bt_entry_mode,
-                                                sl_pct        = _bt_profile.get("sl_pct",        5.0),
-                                                tp_pct        = _bt_profile.get("tp_pct",        15.0),
-                                                rsi_bull_min  = _bt_profile.get("rsi_bull_min",  42),
-                                                rsi_bull_max  = _bt_profile.get("rsi_bull_max",  62),
-                                                adx_threshold = _bt_profile.get("adx_threshold", 20.0),
-                                            )
-                                            _engine = BacktestEngine(
-                                                strategy        = _strat_bt,
-                                                data            = _df_bt,
-                                                initial_capital = 10_000,
-                                                commission_pct  = 0.001,
-                                            )
-                                            _res     = _engine.run()
-                                            _eq      = _res.equity
-                                            _trades  = _res.trades
-                                            _prices  = _df_bt["close"]
-
-                                            _r_total  = bt_m.total_return(_eq)
-                                            _r_bah    = bt_m.buy_hold_return(_prices)
-                                            _r_cagr   = bt_m.cagr(_eq)
-                                            _r_dd     = bt_m.max_drawdown(_eq)
-                                            _r_sharpe = bt_m.sharpe_ratio(_eq)
-                                            _r_wr     = bt_m.win_rate(_trades)
-                                            _r_pf     = bt_m.profit_factor(_trades)
-                                            _n_trades = len(_trades)
-                                            _n_wins   = sum(1 for t in _trades if (t.pnl_pct or 0) > 0)
-                                            _n_losses = _n_trades - _n_wins
-
-                                            st.markdown("**Results**")
-                                            _mc1, _mc2, _mc3 = st.columns(3)
-                                            _mc1.metric(
-                                                "Total Return",
-                                                f"{_r_total * 100:+.1f}%",
-                                                delta=f"B&H {_r_bah * 100:+.1f}%",
-                                            )
-                                            _mc2.metric("CAGR", f"{_r_cagr * 100:+.1f}%")
-                                            _mc3.metric("Sharpe", f"{_r_sharpe:.2f}")
-                                            _mc4, _mc5, _mc6 = st.columns(3)
-                                            _mc4.metric("Max Drawdown", f"{_r_dd * 100:.1f}%")
-                                            _mc5.metric(
-                                                "Win Rate",
-                                                f"{_r_wr * 100:.1f}%",
-                                                delta=f"{_n_wins}W / {_n_losses}L",
-                                            )
-                                            _mc6.metric("Profit Factor", f"{_r_pf:.2f}")
-                                            st.caption(
-                                                f"{_n_trades} trades · {bt_period} · "
-                                                f"{_stored_profile or 'default profile'} · "
-                                                f"{bt_entry_mode}"
-                                            )
-                                    except Exception as _bt_err:
-                                        st.error(f"Backtest error: {_bt_err}")
+                    _bt_expander(sel_strat, f"usr_{sel_idx}")
 
             else:
                 st.caption("↑ Click a row to view, rename, backtest, or delete a strategy.")
