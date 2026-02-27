@@ -1002,7 +1002,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                 sel_code  = sel_strat.get("code", "")
 
                 st.markdown(f"**Selected:** {sel_name}")
-                act_c1, act_c2, act_c3 = st.columns(3)
+                act_c1, act_c2, act_c3, act_c4 = st.columns(4)
 
                 with act_c1:
                     with st.expander("📋 View Code", expanded=False):
@@ -1043,8 +1043,116 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                             supabase_db.delete_strategy(sel_name, workspace_id)
                             st.success(f"Deleted **{sel_name}**.")
                             st.rerun()
+
+                with act_c4:
+                    with st.expander("🧪 Backtest", expanded=False):
+                        bt_ticker = st.text_input(
+                            "Ticker",
+                            value="AAPL",
+                            key=f"lib_bt_ticker_{sel_idx}",
+                            placeholder="e.g. TSLA",
+                        ).upper().strip()
+                        bt_period = st.selectbox(
+                            "History",
+                            ["1y", "2y", "3y", "5y"],
+                            index=1,
+                            key=f"lib_bt_period_{sel_idx}",
+                        )
+
+                        if st.button(
+                            "▶ Run Backtest",
+                            key=f"lib_bt_run_{sel_idx}",
+                            type="primary",
+                            use_container_width=True,
+                        ):
+                            if not bt_ticker:
+                                st.error("Enter a ticker first.")
+                            else:
+                                # ── Map stored entry_mode to GrowthSignalBot value ────
+                                _em_raw = (sel_strat.get("entry_mode") or "All Signals")
+                                _em_map = {
+                                    "all_signals":      "All Signals",
+                                    "buy_only":         "Buy Only",
+                                    "strong_buy_only":  "Strong Buy Only",
+                                    "All Signals":      "All Signals",
+                                    "Buy Only":         "Buy Only",
+                                    "Strong Buy Only":  "Strong Buy Only",
+                                }
+                                bt_entry_mode = _em_map.get(_em_raw, "All Signals")
+
+                                # ── Look up profile params ────────────────────────────
+                                _stored_profile = sel_strat.get("profile_name") or ""
+                                _bt_profile = PROFILES.get("_growth", {})   # default
+                                for _p in PROFILES.values():
+                                    if _p.get("category") == _stored_profile:
+                                        _bt_profile = _p
+                                        break
+
+                                with st.spinner(f"Running backtest on {bt_ticker}…"):
+                                    try:
+                                        _df_bt = _bt_fetch(
+                                            bt_ticker, period=bt_period, interval="1d"
+                                        )
+                                        if _df_bt is None or len(_df_bt) < 60:
+                                            st.error(f"Not enough data for {bt_ticker}.")
+                                        else:
+                                            _strat_bt = GrowthSignalBot(
+                                                entry_mode    = bt_entry_mode,
+                                                sl_pct        = _bt_profile.get("sl_pct",        5.0),
+                                                tp_pct        = _bt_profile.get("tp_pct",        15.0),
+                                                rsi_bull_min  = _bt_profile.get("rsi_bull_min",  42),
+                                                rsi_bull_max  = _bt_profile.get("rsi_bull_max",  62),
+                                                adx_threshold = _bt_profile.get("adx_threshold", 20.0),
+                                            )
+                                            _engine = BacktestEngine(
+                                                strategy        = _strat_bt,
+                                                data            = _df_bt,
+                                                initial_capital = 10_000,
+                                                commission_pct  = 0.001,
+                                            )
+                                            _res     = _engine.run()
+                                            _eq      = _res.equity
+                                            _trades  = _res.trades
+                                            _prices  = _df_bt["close"]
+
+                                            _r_total  = bt_m.total_return(_eq)
+                                            _r_bah    = bt_m.buy_hold_return(_prices)
+                                            _r_cagr   = bt_m.cagr(_eq)
+                                            _r_dd     = bt_m.max_drawdown(_eq)
+                                            _r_sharpe = bt_m.sharpe_ratio(_eq)
+                                            _r_wr     = bt_m.win_rate(_trades)
+                                            _r_pf     = bt_m.profit_factor(_trades)
+                                            _n_trades = len(_trades)
+                                            _n_wins   = sum(1 for t in _trades if (t.pnl_pct or 0) > 0)
+                                            _n_losses = _n_trades - _n_wins
+
+                                            st.markdown("**Results**")
+                                            _mc1, _mc2, _mc3 = st.columns(3)
+                                            _mc1.metric(
+                                                "Total Return",
+                                                f"{_r_total * 100:+.1f}%",
+                                                delta=f"B&H {_r_bah * 100:+.1f}%",
+                                            )
+                                            _mc2.metric("CAGR", f"{_r_cagr * 100:+.1f}%")
+                                            _mc3.metric("Sharpe", f"{_r_sharpe:.2f}")
+                                            _mc4, _mc5, _mc6 = st.columns(3)
+                                            _mc4.metric("Max Drawdown", f"{_r_dd * 100:.1f}%")
+                                            _mc5.metric(
+                                                "Win Rate",
+                                                f"{_r_wr * 100:.1f}%",
+                                                delta=f"{_n_wins}W / {_n_losses}L",
+                                            )
+                                            _mc6.metric("Profit Factor", f"{_r_pf:.2f}")
+                                            st.caption(
+                                                f"{_n_trades} trades · {bt_period} · "
+                                                f"{_stored_profile or 'default profile'} · "
+                                                f"{bt_entry_mode}"
+                                            )
+                                    except Exception as _bt_err:
+                                        st.error(f"Backtest error: {_bt_err}")
+
             else:
-                st.caption("↑ Click a row to view, rename, or delete a strategy.")
+                st.caption("↑ Click a row to view, rename, backtest, or delete a strategy.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
