@@ -82,6 +82,51 @@ INDICATOR_TEMPLATES: dict[str, list[str]] = {
 
 ALL_INDICATORS = ["rsi", "macd", "adx", "ema20", "sma50", "sma200", "vwap", "atr", "fib", "volume"]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Built-in (default) strategies — loaded from pine-scripts/ at startup
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PINE_DIR = Path(__file__).parent.parent / "pine-scripts"
+
+_DEFAULT_STRATEGY_META: list[tuple] = [
+    # (display name,                   filename,                         profile,             entry_mode,     timeframe, indicators)
+    ("Growth Signal Bot v4 (Daily)",   "growth_signal_bot_v4.pine",     "Large-Cap Growth",  "All Signals",  "1D",
+     ["rsi", "macd", "adx", "ema20", "sma50", "sma200", "vwap", "atr", "fib", "volume"]),
+    ("Growth Signal Bot v1 (1H)",      "growth_signal_bot_1h_v1.pine",  "Large-Cap Growth",  "All Signals",  "1H",
+     ["rsi", "macd", "adx", "ema20", "sma50", "sma200", "vwap", "atr", "fib", "volume"]),
+    ("Swing Signal Bot v1",            "swing_signal_bot_v1.pine",      "Large-Cap Growth",  "All Signals",  "1D",
+     ["rsi", "macd", "ema20", "sma50", "sma200", "atr", "volume"]),
+    ("Triple MA",                      "triple_ma_v1.pine",             "—",                 "—",            "1D",
+     ["ema20", "sma50", "sma200"]),
+    ("VIX Spike Warning v1",           "vix_spike_warning_v1.pine",     "—",                 "—",            "1D",
+     ["vwap"]),
+]
+
+
+def _load_default_strategies() -> list[dict]:
+    """Read the pre-built Pine Script files from pine-scripts/ and return them
+    as strategy dicts compatible with the Library tab's row format."""
+    result = []
+    for name, filename, profile, entry_mode, timeframe, indicators in _DEFAULT_STRATEGY_META:
+        path = _PINE_DIR / filename
+        try:
+            code = path.read_text(encoding="utf-8")
+        except Exception:
+            code = f"// Could not load {filename}"
+        result.append({
+            "name":         name,
+            "code":         code,
+            "profile_name": profile,
+            "entry_mode":   entry_mode,
+            "timeframe":    timeframe,
+            "indicators":   indicators,
+            "is_builtin":   True,
+        })
+    return result
+
+
+DEFAULT_STRATEGIES: list[dict] = _load_default_strategies()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Workspace ID management
