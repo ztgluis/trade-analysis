@@ -798,7 +798,7 @@ def _lib_backtest_expander(strat: dict, key_pfx: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_strategies_page(workspace_id: str = "default") -> None:
-    st.title("🛠️ Strategies")
+    st.title("🎛️ Generator")
 
     tab_gen, tab_lib = st.tabs(["⚡ Generate", "📚 Library"])
 
@@ -806,7 +806,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
     # Tab 1 — Generate
     # ══════════════════════════════════════════════════════════════════════
     with tab_gen:
-        st.caption("Generate a TradingView Pine Script strategy from any profile.")
+        st.caption("Generate a TradingView Pine Script strategy or indicator from any profile.")
 
         # ── Phase 1: Template selection ───────────────────────────────────────
         st.markdown("#### Step 1 — Choose a Template")
