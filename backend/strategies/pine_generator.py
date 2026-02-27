@@ -315,6 +315,7 @@ class PineScriptGenerator:
         blocks: list[str] = [
             "",
             "// \u2500\u2500\u2500 Indicators " + "\u2500" * 57,
+            "",
         ]
 
         # Moving averages
