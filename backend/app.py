@@ -36,7 +36,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
-DEFAULT_WATCHLIST = ["META", "AAPL", "AMZN", "NFLX", "GOOG", "SPY", "QQQ", "DIA", "GLD", "SLV", "DXY"]
+DEFAULT_WATCHLIST = ["META", "AAPL", "AMZN", "NFLX", "GOOG", "SPY", "QQQ", "DIA", "GLD", "SLV"]
 
 VERDICT_COLORS = {
     "green":  "#44dd88",
