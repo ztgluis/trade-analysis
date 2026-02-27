@@ -1233,7 +1233,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                             st.rerun()
 
                 with act_c4:
-                    _bt_expander(sel_strat, f"usr_{sel_idx}")
+                    _lib_backtest_expander(sel_strat, f"usr_{sel_idx}")
 
             else:
                 st.caption("↑ Click a row to view, rename, backtest, or delete a strategy.")
