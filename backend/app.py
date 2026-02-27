@@ -377,14 +377,14 @@ def render_sidebar(workspace_id: str = "default") -> None:
     st.sidebar.divider()
     page_label = st.sidebar.radio(
         "Navigation",
-        ["📊 Dashboard", "⚙️ Profiles", "🛠️ Strategies"],
+        ["📊 Dashboard", "⚙️ Profiles", "🎛️ Generator"],
         label_visibility="collapsed",
         key="nav_radio",
     )
     _PAGE_MAP = {
         "📊 Dashboard":  "dashboard",
         "⚙️ Profiles":   "profiles",
-        "🛠️ Strategies": "strategies",
+        "🎛️ Generator":  "strategies",
     }
     st.session_state["page"] = _PAGE_MAP[page_label]
 
