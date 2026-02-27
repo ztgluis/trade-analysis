@@ -280,7 +280,7 @@ trader-bot/
 │   │   ├── growth_signal_bot.py     # Backwards-compat shim → LongSignalStrategy
 │   │   └── pine_generator.py        # Pine Script v6 code generator
 │   │
-│   ├── app.py                       # Streamlit dashboard (Dashboard / Profiles / Strategies)
+│   ├── app.py                       # Streamlit dashboard (Dashboard / Profiles / Generator)
 │   │
 │   ├── run_analyze.py               # Unified long+short verdict (CLI wrapper for decision_engine)
 │   ├── run_analyze_long.py          # Deep-dive LONG analysis with base rates + checklist
