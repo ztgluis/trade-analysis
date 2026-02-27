@@ -1135,6 +1135,10 @@ def render_strategies_page(workspace_id: str = "default") -> None:
         usr_strats = [s for s in all_saved if (s.get("entry_mode") or "—") not in ("—",)]
         usr_inds   = [s for s in all_saved if (s.get("entry_mode") or "—") in ("—",)]
 
+        # Get library sub-tab from query params
+        lib_tab = params.get("lt", "strategies")  # lt = library tab
+        lib_tab_index = 0 if lib_tab == "strategies" else 1
+
         lib_strat_tab, lib_ind_tab = st.tabs([
             f"📈 Strategies ({len(bi_strats) + len(usr_strats)})",
             f"📊 Indicators ({len(bi_inds) + len(usr_inds)})",
