@@ -264,11 +264,12 @@ trader-bot/
 │   │
 │   ├── app.py                       # Streamlit dashboard (Dashboard / Profiles / Strategies)
 │   │
-│   ├── run_decide.py                # Long decision analysis
-│   ├── run_decide_short.py          # Short decision analysis
-│   ├── run_decide_unified.py        # Both + best recommendation
-│   ├── run_multi.py                 # Multi-ticker scan
-│   ├── run_backtest.py              # Backtester runner
+│   ├── run_analyze.py               # Unified long+short verdict (CLI wrapper for decision_engine)
+│   ├── run_analyze_long.py          # Deep-dive LONG analysis with base rates + checklist
+│   ├── run_analyze_short.py         # Deep-dive SHORT analysis with base rates + checklist
+│   ├── run_scan.py                  # Raw indicator scan — current state dump, no verdict
+│   ├── run_backtest_multi.py        # Multi-ticker backtest comparison table
+│   ├── run_backtest.py              # Single-ticker backtest runner
 │   └── requirements.txt
 │
 ├── pine-scripts/                    # TradingView Pine Script strategies
