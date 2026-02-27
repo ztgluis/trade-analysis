@@ -859,8 +859,23 @@ def render_strategies_page(workspace_id: str = "default") -> None:
 
         st.markdown("---")
 
-        # ── Generate button ───────────────────────────────────────────────────
-        if st.button("Generate Pine Script", type="primary", key="gen_generate_btn"):
+        # ── Generate / Save buttons ───────────────────────────────────────────
+        btn_c1, btn_c2 = st.columns(2)
+        with btn_c1:
+            gen_clicked = st.button(
+                "Generate Pine Script",
+                type="primary",
+                key="gen_generate_btn",
+                use_container_width=True,
+            )
+        with btn_c2:
+            save_clicked = st.button(
+                "💾 Save to Library",
+                key="gen_save_direct_btn",
+                use_container_width=True,
+            )
+
+        if gen_clicked or save_clicked:
             if not chosen_indicators:
                 st.error("Select at least one indicator before generating.")
             else:
@@ -875,6 +890,20 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                     )
                     code = gen.generate()
                     st.session_state["gen_code"] = code
+
+                if save_clicked:
+                    name_clean = strategy_name.strip()
+                    if name_clean:
+                        metadata = {
+                            "profile_name": selected_profile_name,
+                            "indicators":   chosen_indicators,
+                            "entry_mode":   entry_mode,
+                            "timeframe":    timeframe,
+                        }
+                        supabase_db.save_strategy(name_clean, code, metadata, workspace_id)
+                        st.success(f"✅ Saved **{name_clean}** to the Library.")
+                    else:
+                        st.error("Enter a strategy name before saving.")
 
         # ── Show results if code has been generated ───────────────────────────
         if st.session_state.get("gen_code"):
@@ -911,32 +940,6 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                 mime="text/plain",
                 key="gen_download_btn",
             )
-
-            # ── Save to Library ───────────────────────────────────────────────
-            st.markdown("---")
-            save_c1, save_c2 = st.columns([4, 1])
-            with save_c1:
-                save_name = st.text_input(
-                    "Save as",
-                    value=strategy_name,
-                    key="gen_save_name",
-                    placeholder="Strategy name…",
-                )
-            with save_c2:
-                st.write("")  # vertical alignment spacer
-                if st.button("💾 Save to Library", use_container_width=True, key="gen_save_btn"):
-                    name_clean = save_name.strip()
-                    if name_clean:
-                        metadata = {
-                            "profile_name": selected_profile_name,
-                            "indicators":   chosen_indicators,
-                            "entry_mode":   entry_mode,
-                            "timeframe":    timeframe,
-                        }
-                        supabase_db.save_strategy(name_clean, code, metadata, workspace_id)
-                        st.success(f"✅ Saved **{name_clean}** to the Library.")
-                    else:
-                        st.error("Enter a strategy name before saving.")
 
     # ══════════════════════════════════════════════════════════════════════
     # Tab 2 — Library
