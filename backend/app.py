@@ -1251,6 +1251,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
         # Strategies tab
         # ══════════════════════════════════════════════════════════════════════
         with lib_strat_tab:
+            st.query_params["lt"] = "strategies"
 
             # ── Built-in Strategies ───────────────────────────────────────────
             st.markdown("#### 🔒 Built-in Strategies")
