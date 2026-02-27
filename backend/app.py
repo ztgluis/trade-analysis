@@ -36,6 +36,27 @@ st.set_page_config(
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 DEFAULT_WATCHLIST = ["GOOG", "META", "GLD", "SLV", "NFLX", "SNAP"]
+WATCHLIST_FILE = Path.home() / ".trader-bot" / "watchlist.json"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Watchlist persistence
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_watchlist() -> list[str]:
+    """Load watchlist from disk, or return default if file doesn't exist."""
+    try:
+        if WATCHLIST_FILE.exists():
+            with open(WATCHLIST_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return DEFAULT_WATCHLIST.copy()
+
+def save_watchlist(watchlist: list[str]) -> None:
+    """Persist watchlist to disk."""
+    WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(WATCHLIST_FILE, "w") as f:
+        json.dump(watchlist, f)
 
 VERDICT_COLORS = {
     "green":  "#44dd88",
