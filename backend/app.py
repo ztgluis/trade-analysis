@@ -25,7 +25,7 @@ from analysis.asset_profiles  import (
 # Page config
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Growth Signal Bot",
+    page_title="Trade Analysis",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
