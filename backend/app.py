@@ -1172,19 +1172,21 @@ def render_profiles_page(workspace_id: str = "default") -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    workspace_id = get_workspace_id()
+
     # One-time migration: sync local JSON to Supabase if available
     if "migration_attempted" not in st.session_state:
-        if supabase_db.migrate_json_to_supabase():
+        if supabase_db.migrate_json_to_supabase(workspace_id="default"):
             st.toast("✅ Synced local profiles to cloud", icon="🔄")
         st.session_state.migration_attempted = True
 
-    watchlist, horizon_td, run_all = render_sidebar()
+    watchlist, horizon_td, run_all = render_sidebar(workspace_id)
 
     # ── Page routing ──────────────────────────────────────────────────────────
     page = st.session_state.get("page", "dashboard")
 
     if page == "settings":
-        render_profiles_page()
+        render_profiles_page(workspace_id)
         return
 
     # ── Run analysis ─────────────────────────────────────────────────────────
