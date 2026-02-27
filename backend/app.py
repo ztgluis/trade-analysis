@@ -1132,7 +1132,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                         key=f"bi_dl_{bi_idx}",
                     )
             with bi_c2:
-                _bt_expander(bi_strat, f"bi_{bi_idx}")
+                _lib_backtest_expander(bi_strat, f"bi_{bi_idx}")
         else:
             st.caption("↑ Click a built-in strategy to view its code or run a backtest.")
 
