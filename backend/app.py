@@ -988,7 +988,7 @@ def render_profiles_page(workspace_id: str = "default") -> None:
         st.markdown("#### Step 2 — Customise")
 
         # Profile dropdown (all profiles)
-        all_profiles_for_gen = get_all_profiles()
+        all_profiles_for_gen = get_all_profiles(workspace_id)
         profile_display = {p["category"]: k for k, p in all_profiles_for_gen.items()}
         selected_profile_name = st.selectbox(
             "Analysis Profile",
