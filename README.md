@@ -290,10 +290,12 @@ trader-bot/
 │   ├── run_backtest.py              # Single-ticker backtest runner
 │   └── requirements.txt
 │
-├── pine-scripts/                    # TradingView Pine Script strategies
-│   ├── growth_signal_bot_v4.pine    # Daily strategy v4.3
-│   ├── growth_signal_bot_1h_v1.pine # 1H strategy
-│   ├── swing_signal_bot_v1.pine
+├── pine-scripts/                    # TradingView Pine Script files (strategies + indicators)
+│   ├── growth_signal_bot_v4.pine    # Long Signal Strategy v4 — full suite, daily
+│   ├── growth_signal_bot_1h_v1.pine # Long Signal Strategy v1 — full suite, 1H
+│   ├── swing_signal_bot_v1.pine     # Swing Signal Strategy v1 — swing-optimised
+│   ├── triple_ma_v1.pine            # Triple MA [Indicator] — EMA20/SMA50/SMA200
+│   ├── vix_spike_warning_v1.pine    # VIX Spike Warning [Indicator] — VWAP overlay
 │   └── lint_pine.py                 # Pine Script linter / validator
 │
 ├── docs/
