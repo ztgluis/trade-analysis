@@ -34,17 +34,26 @@ Then visit `http://localhost:8501`
 ### 3. Try Analysis Commands
 
 ```bash
-# Single ticker analysis (long setup)
-python run_decide.py TSLA
+# Unified long/short verdict — same engine as the Dashboard (recommended)
+python run_analyze.py TSLA
+python run_analyze.py GOOG META NVDA          # multi-symbol
 
-# Short setup analysis
-python run_decide_short.py NFLX
+# Deep-dive long analysis only (detailed buy/hold/sell checklist)
+python run_analyze_long.py META
+python run_analyze_long.py META --horizon 21  # 1-month horizon
 
-# Both long + short, best recommendation
-python run_decide_unified.py GLD SNAP META
+# Deep-dive short analysis only
+python run_analyze_short.py SNAP
 
-# Multi-ticker scan
-python run_multi.py GOOG META NVDA TSLA
+# Raw indicator scan — dumps current state of every indicator (no verdict)
+python run_scan.py META
+python run_scan.py META --tf 1h               # 1-hour timeframe
+
+# Multi-ticker backtest comparison table
+python run_backtest_multi.py GOOG META NVDA TSLA
+
+# Single-ticker backtest
+python run_backtest.py --ticker TSLA --period 3y
 ```
 
 ## Configuration
