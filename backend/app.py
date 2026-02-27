@@ -903,7 +903,7 @@ def main() -> None:
             st.rerun()
 
     # ── Watchlist table (always visible) ─────────────────────────────────────
-    st.title("📈 Growth Signal Bot")
+    st.title("📈 Trade Analysis")
     render_dashboard(results)
 
     # ── Deep dive (shown when a ticker is selected) ───────────────────────────
