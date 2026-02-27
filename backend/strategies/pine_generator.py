@@ -597,15 +597,19 @@ class PineScriptGenerator:
             ])
 
         if self.output_type != "indicator":
-            # Buy signal shapes (strategy only — reference buy_signal/bounce_signal)
+            # Buy signal shapes — filtered by the Signal Display toggles
+            # show_buy_sigs / show_bounce_sigs / strong_only are Pine Script inputs
             blocks.append("")
             blocks.append(
-                'plotshape(buy_signal, title="Buy", style=shape.triangleup, '
+                '// Signal Display — use na to hide markers based on user toggles\n'
+                '_buy_show    = show_buy_sigs    ? (strong_only ? bull_strong : buy_signal) : na\n'
+                'plotshape(_buy_show, title="Buy", style=shape.triangleup, '
                 'location=location.belowbar, color=color.new(color.green, 0), size=size.normal)'
             )
             if self._has("ema20"):
                 blocks.append(
-                    'plotshape(bounce_signal, title="Bounce", style=shape.circle, '
+                    '_bounce_show = show_bounce_sigs ? bounce_signal : na\n'
+                    'plotshape(_bounce_show, title="Bounce", style=shape.circle, '
                     'location=location.belowbar, color=color.new(color.aqua, 0), size=size.small)'
                 )
 
