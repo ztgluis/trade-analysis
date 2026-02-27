@@ -856,8 +856,8 @@ def render_profiles_page(workspace_id: str = "default") -> None:
     # Tab 3 — Ticker overrides (assign any ticker to any profile)
     # ─────────────────────────────────────────────────────────────────────────
     with tab3:
-        overrides  = get_ticker_overrides()
-        all_p      = get_all_profiles()
+        overrides  = get_ticker_overrides(workspace_id)
+        all_p      = get_all_profiles(workspace_id)
 
         # ── Current overrides table ───────────────────────────────────────────
         if overrides:
