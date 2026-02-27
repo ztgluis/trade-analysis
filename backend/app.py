@@ -720,10 +720,17 @@ def render_strategies_page(workspace_id: str = "default") -> None:
     st.markdown("**Select Indicators**")
 
     INDICATOR_GROUPS = {
-        "Momentum":            [("rsi",   "RSI"),   ("macd",  "MACD")],
-        "Trend":               [("ema20", "EMA20"), ("sma50", "SMA50"), ("sma200", "SMA200")],
-        "Filters":             [("adx",   "ADX"),   ("atr",   "ATR")],
-        "Support/Resistance":  [("vwap",  "VWAP"),  ("fib",   "Fibonacci Levels"), ("volume", "Volume")],
+        "Momentum":            [("rsi",   "RSI"),       ("macd",  "MACD")],
+        "Trend":               [("ema20", "Fast EMA"),  ("sma50", "Mid SMA"), ("sma200", "Slow SMA")],
+        "Filters":             [("adx",   "ADX"),       ("atr",   "ATR")],
+        "Support/Resistance":  [("vwap",  "VWAP"),      ("fib",   "Fibonacci Levels"), ("volume", "Volume")],
+    }
+
+    # Human-readable labels for expander titles
+    IND_LABELS = {
+        "rsi": "RSI", "macd": "MACD", "adx": "ADX", "atr": "ATR",
+        "ema20": "Fast EMA", "sma50": "Mid SMA", "sma200": "Slow SMA",
+        "vwap": "VWAP", "fib": "Fibonacci", "volume": "Volume",
     }
 
     cb_col1, cb_col2, cb_col3 = st.columns(3)
