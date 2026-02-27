@@ -755,7 +755,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
         indicator_params: dict[str, dict] = {}
 
         for ind in chosen_indicators:
-            with st.expander(ind.upper(), expanded=False):
+            with st.expander(IND_LABELS.get(ind, ind.upper()), expanded=False):
                 params: dict = {}
                 if ind == "rsi":
                     params["length"] = st.number_input("Length", min_value=2, max_value=50,
