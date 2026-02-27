@@ -210,27 +210,41 @@ The app has three sections, accessible via the left sidebar radio:
 - Live preview of current auto-detected profile
 - Overrides persist automatically
 
-### 🛠️ Strategies
+### 🎛️ Generator
 
 **Tab 1 — ⚡ Generate**
 - Choose a **template** (Momentum Only / Trend+Momentum / Full Strategy / Custom)
+- Select **Script Type**:
+  - **📈 Strategy** — full `strategy()` script with entry/exit logic, stop-loss, take-profit, and signal shapes
+  - **📊 Indicator** — `indicator()` script with calculations + plots only (no trade orders); hides entry mode options
 - Toggle individual **indicators** (RSI, MACD, ADX, Fast EMA, Mid SMA, Slow SMA, VWAP, ATR, Fibonacci, Volume) and configure their parameters
   - **VWAP** supports anchor period (Session / Week / Month / Quarter / Year) and source (HLC3 / HL2 / Close / OHLC4)
   - EMA/SMA lengths are user-configurable; labels reflect role (Fast/Mid/Slow) rather than fixed period
-- Set **entry mode** (All Signals / Buy Only / Strong Buy Only), strategy name, and timeframe
+- Set **entry mode** (All Signals / Buy Only / Strong Buy Only) — strategy scripts only
+- Set script name and timeframe
 - Preview generated code + lint validation, then **download as `.pine` file** or **💾 Save to Library**
 
 **Tab 2 — 📚 Library**
-- Browse all saved strategies in a sortable table (Name, Profile, Indicators, Entry Mode, Timeframe, Saved date)
-- Click any row to reveal four per-strategy actions:
-  - **📋 View Code** — view full Pine Script source + download `.pine`
-  - **✏️ Rename** — change the strategy name
-  - **🗑️ Delete** — permanently remove the strategy
-  - **🧪 Backtest** — run the Python backtester against any ticker:
-    - Enter a ticker symbol and select history length (1y / 2y / 3y / 5y)
-    - Runs `GrowthSignalBot` configured with the strategy's profile (RSI zone, ADX threshold, SL/TP %) and entry mode
-    - Displays 6 key metrics: Total Return vs B&H, CAGR, Sharpe, Max Drawdown, Win Rate, Profit Factor
-- Saved strategies are workspace-scoped — each workspace has its own library
+
+Split into two sub-tabs:
+
+**📈 Strategies**
+- **🔒 Built-in Strategies** (read-only): 3 pre-built strategy scripts shipped with the app
+  - *Long Signal Strategy v4 (Daily)* — full indicator suite, daily timeframe
+  - *Long Signal Strategy v1 (1H)* — full indicator suite, 1-hour timeframe
+  - *Swing Signal Strategy v1* — swing-optimised subset, daily timeframe
+- **📚 Your Strategies** (full CRUD): user-generated strategy scripts
+  - Click a row to reveal: **📋 View Code**, **✏️ Rename**, **🗑️ Delete**, **🧪 Backtest**
+  - Backtest runs `LongSignalStrategy` configured with the strategy's profile (RSI zone, ADX threshold, SL/TP %) and entry mode; shows 6 metrics: Total Return vs B&H, CAGR, Sharpe, Max Drawdown, Win Rate, Profit Factor
+
+**📊 Indicators**
+- **🔒 Built-in Indicators** (read-only): 2 pre-built indicator scripts
+  - *Triple MA [Indicator]* — EMA20, SMA50, SMA200 with regime background
+  - *VIX Spike Warning [Indicator]* — VWAP-based volatility overlay
+- **📊 Your Indicators** (full CRUD): user-generated indicator scripts
+  - Click a row to reveal: **📋 View Code**, **✏️ Rename**, **🗑️ Delete**
+
+All saved scripts are workspace-scoped — each workspace has its own library.
 
 ### Deep Dive (Per-Ticker)
 - **Verdict + Profile Badge**: Current recommendation with applied profile
