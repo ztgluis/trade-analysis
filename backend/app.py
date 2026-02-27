@@ -1168,10 +1168,11 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
     # B. Horizon — read from session state BEFORE the selectbox renders at the
     #    bottom.  Streamlit writes widget values to session_state before the
     #    script runs, so this always reflects the user's current selection.
-    st.session_state.setdefault("horizon_select", "1 month")
+    _default_horizon = "1 month (21td)"
+    st.session_state.setdefault("horizon_select", _default_horizon)
     horizon_label = st.session_state["horizon_select"]
     if horizon_label not in HORIZON_MAP:
-        horizon_label = "1 month"
+        horizon_label = _default_horizon
     horizon_td = HORIZON_MAP[horizon_label]
 
     # C. Analysis logic
