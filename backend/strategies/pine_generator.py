@@ -418,6 +418,7 @@ class PineScriptGenerator:
         blocks: list[str] = [
             "",
             "// \u2500\u2500\u2500 Entry Conditions " + "\u2500" * 50,
+            "",
         ]
 
         # ── gate booleans ──────────────────────────────────────────────────────
