@@ -69,6 +69,15 @@ HORIZON_MAP = {
     "6 months (126td)": 126,
 }
 
+INDICATOR_TEMPLATES: dict[str, list[str]] = {
+    "Momentum Only":    ["rsi", "macd"],
+    "Trend + Momentum": ["sma50", "sma200", "rsi", "macd"],
+    "Full Strategy":    ["rsi", "macd", "adx", "ema20", "sma50", "sma200", "vwap", "atr", "fib", "volume"],
+    "Custom":           [],
+}
+
+ALL_INDICATORS = ["rsi", "macd", "adx", "ema20", "sma50", "sma200", "vwap", "atr", "fib", "volume"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Workspace ID management
