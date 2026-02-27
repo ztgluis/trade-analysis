@@ -57,9 +57,12 @@ class PineScriptGenerator:
         Missing params fall back to _INDICATOR_DEFAULTS.
     strategy_name : str
     entry_mode : str
-        "all_signals" | "buy_only" | "strong_buy_only"
+        "all_signals" | "buy_only" | "strong_buy_only"  (ignored for indicators)
     timeframe : str
         TradingView timeframe string: "D" (daily), "60" (1H), "240" (4H)
+    output_type : str
+        "strategy" (default) — full strategy() script with entry/exit logic
+        "indicator"          — indicator() script with calculations + plots only
     """
 
     def __init__(
@@ -70,6 +73,7 @@ class PineScriptGenerator:
         strategy_name: str = "Custom Strategy",
         entry_mode: str = "all_signals",
         timeframe: str = "D",
+        output_type: str = "strategy",
     ) -> None:
         self.profile          = profile
         self.indicators       = [i.lower() for i in indicators]
@@ -77,6 +81,7 @@ class PineScriptGenerator:
         self.strategy_name    = strategy_name
         self.entry_mode       = entry_mode.lower()
         self.timeframe        = timeframe
+        self.output_type      = output_type.lower()  # "strategy" or "indicator"
 
         # Resolved params: merge defaults with caller overrides
         self._params: dict[str, dict[str, Any]] = {}
