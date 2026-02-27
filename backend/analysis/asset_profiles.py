@@ -25,7 +25,7 @@ Usage
 
 Custom profiles
 ───────────────
-Users can create named custom profiles that persist in ~/.trader-bot/custom_profiles.json.
+Users can create named custom profiles that persist in Supabase (cloud) or ~/.trader-bot/custom_profiles.json (local fallback).
 Custom profiles appear everywhere built-in profiles do (deep-dive dropdown, ticker overrides, etc).
 
 Ticker override priority
