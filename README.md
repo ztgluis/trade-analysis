@@ -154,25 +154,19 @@ Each visitor gets an isolated **workspace** — their own watchlist, custom prof
 
 **No Supabase?** Workspaces still work — data is stored in local JSON keyed by workspace ID. Not shared across devices in that case.
 
-## Dashboard Features
+## App Navigation
 
-### Watchlist View
-- Summary table showing all tickers with verdict, scores, regime, and risk/reward
-- Click any row to open detailed analysis
-- Add/remove symbols on the fly
+The app has three sections, accessible via the left sidebar radio:
 
-### Deep Dive (Per-Ticker)
-- **Verdict + Profile Badge**: Current recommendation with applied profile
-- **Score Bars**: Long (0-10) and short (0-10) scores
-- **Condition Details**: Breakdown of why each score is what it is
-- **Price Chart**: Last 6 months with moving averages (SMA200, SMA50, EMA20) and signal markers
-- **Signal Timeline**: All signals (BUY, BOUNCE, SELL, divergences) chronologically
-- **Base Rates**: Win rate at different horizons (1 week, 2 weeks, 1 month, etc.)
-- **Key Levels**: Support/resistance with distance from current price
-- **Action Plan**: Entry zones, stop-loss, target, R/R ratio
-- **Earnings & Macro**: Next earnings date, macro regime (SPY/QQQ), alpha vs benchmark
+### 📊 Dashboard
+- **Ticker chips**: All watchlist symbols shown across the top with live verdict colors (🟢 🟡 🔴). Click a chip to deep-dive; click × to remove.
+- **Add ticker**: Text input to add new symbols to your watchlist
+- **▶ Run Analysis**: Re-runs analysis on all watchlist tickers
+- **⏱ Horizon**: Select analysis horizon (1 week → 6 months) — affects scoring calibration and base rates
+- **Results grid**: Summary table with verdict, scores, regime, risk/reward for all tickers
+- **Deep Dive** (click any row or chip): Per-ticker detailed analysis
 
-### Profile Settings
+### ⚙️ Profiles
 
 **Tab 1 — Built-in Profiles**
 - Read-only comparison table of all 5 templates
@@ -185,13 +179,31 @@ Each visitor gets an isolated **workspace** — their own watchlist, custom prof
   - Stop-Loss % / Take-Profit % (risk/reward)
 - Implied R/R ratio auto-calculated
 - Delete custom profiles (orphaned ticker overrides auto-cleaned)
-- Saved to `~/.trader-bot/custom_profiles.json`
+- Saved to Supabase (or `~/.trader-bot/custom_profiles.json` as fallback)
 
 **Tab 3 — Ticker Overrides**
 - Pin any ticker (TSLA, RIVN, BTC-USD, etc.) to any profile
 - Override takes precedence over auto-detection
 - Live preview of current auto-detected profile
 - Overrides persist automatically
+
+### 🛠️ Strategies
+- Generate a TradingView Pine Script strategy from any profile
+- Choose a **template** (Momentum Only / Trend+Momentum / Full Strategy / Custom)
+- Toggle individual **indicators** (RSI, MACD, ADX, EMA, SMA, VWAP, ATR, Fibonacci, Volume) and configure their parameters
+- Set **entry mode** (All Signals / Buy Only / Strong Buy Only), strategy name, and timeframe
+- Preview generated code + lint validation, then **download as `.pine` file**
+
+### Deep Dive (Per-Ticker)
+- **Verdict + Profile Badge**: Current recommendation with applied profile
+- **Score Bars**: Long (0-16) and short scores
+- **Condition Details**: Breakdown of why each score is what it is
+- **Price Chart**: Last 6 months with moving averages (SMA200, SMA50, EMA20) and signal markers
+- **Signal Timeline**: All signals (BUY, BOUNCE, SELL, divergences) chronologically
+- **Base Rates**: Win rate at different horizons (1 week, 2 weeks, 1 month, etc.)
+- **Key Levels**: Support/resistance with distance from current price
+- **Action Plan**: Entry zones, stop-loss, target, R/R ratio
+- **Earnings & Macro**: Next earnings date, macro regime (SPY/QQQ), alpha vs benchmark
 
 ## Project Structure
 
