@@ -298,7 +298,7 @@ def render_sidebar() -> tuple[list[str], int, bool]:
 
     if to_remove:
         st.session_state.watchlist.remove(to_remove)
-        save_watchlist(st.session_state.watchlist)
+        supabase_db.save_watchlist(st.session_state.watchlist)
         st.session_state.get("results", {}).pop(to_remove, None)
         if st.session_state.get("selected_ticker") == to_remove:
             st.session_state.pop("selected_ticker", None)
