@@ -290,7 +290,7 @@ def build_signal_timeline(r: dict) -> go.Figure | None:
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_sidebar(workspace_id: str = "default") -> tuple[list[str], int, bool]:
+def render_sidebar(workspace_id: str = "default") -> None:
     st.sidebar.title("📈 Trade Analysis")
     st.sidebar.caption("Decision Dashboard · v1.0")
     st.sidebar.divider()
@@ -316,79 +316,18 @@ def render_sidebar(workspace_id: str = "default") -> tuple[list[str], int, bool]
             st.rerun()
 
     st.sidebar.divider()
-
-    # ── Watchlist ──────────────────────────────────────────────────────────
-    st.sidebar.subheader("📋 Watchlist")
-    if "watchlist" not in st.session_state:
-        watchlist = supabase_db.get_watchlist(workspace_id)
-        if watchlist:
-            st.session_state.watchlist = watchlist
-        else:
-            st.session_state.watchlist = DEFAULT_WATCHLIST.copy()
-            st.toast(f"⚠️ Using default watchlist: {DEFAULT_WATCHLIST}", icon="ℹ️")
-
-    to_remove = None
-    for sym in st.session_state.watchlist:
-        r = st.session_state.get("results", {}).get(sym)
-        verdict_emoji = "⚪"
-        price_str     = ""
-        if r and not r.get("error"):
-            color_key = r.get("color", "grey")
-            verdict_emoji = {"green": "🟢", "lime": "🟡", "red": "🔴",
-                             "grey": "⚪", "yellow": "🟡"}.get(color_key, "⚪")
-            price_str = f"  ${r['price']:,.0f}"
-
-        c1, c2 = st.sidebar.columns([5, 1])
-        # Clickable name → navigate to deep dive
-        if c1.button(f"{verdict_emoji} {sym}{price_str}", key=f"nav_{sym}",
-                     use_container_width=True, help=r.get("verdict", "") if r else ""):
-            st.session_state["selected_ticker"] = sym
-            st.session_state["page"] = "dashboard"
-            st.rerun()
-        if c2.button("✕", key=f"rm_{sym}", help=f"Remove {sym}"):
-            to_remove = sym
-
-    if to_remove:
-        st.session_state.watchlist.remove(to_remove)
-        supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
-        st.session_state.get("results", {}).pop(to_remove, None)
-        if st.session_state.get("selected_ticker") == to_remove:
-            st.session_state.pop("selected_ticker", None)
-        st.rerun()
-
-    # Add symbol form
-    with st.sidebar.form("add_symbol", clear_on_submit=True):
-        new_sym = st.text_input("Add symbol", placeholder="e.g. AAPL").upper().strip()
-        if st.form_submit_button("+ Add") and new_sym and new_sym not in st.session_state.watchlist:
-            st.session_state.watchlist.append(new_sym)
-            supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
-            st.rerun()
-
-    st.sidebar.divider()
-
-    # ── Horizon ────────────────────────────────────────────────────────────
-    st.sidebar.subheader("⏱ Horizon")
-    horizon_label = st.sidebar.selectbox(
-        "Analysis horizon", list(HORIZON_MAP.keys()),
-        index=2,   # default: 1 month
-        key="horizon_select",
+    page_label = st.sidebar.radio(
+        "Navigation",
+        ["📊 Dashboard", "⚙️ Profiles", "🛠️ Strategies"],
+        label_visibility="collapsed",
+        key="nav_radio",
     )
-    horizon_td = HORIZON_MAP[horizon_label]
-
-    st.sidebar.divider()
-
-    # ── Actions ────────────────────────────────────────────────────────────
-    run_all = st.sidebar.button("🔄 Run All Analysis", type="primary",
-                                use_container_width=True)
-    if "results" in st.session_state and st.session_state.results:
-        last_run = st.session_state.get("last_run", "")
-        st.sidebar.caption(f"Last run: {last_run}")
-
-    if st.sidebar.button("⚙️ Profile Settings", use_container_width=True):
-        st.session_state["page"] = "settings"
-        st.rerun()
-
-    return st.session_state.watchlist, horizon_td, run_all
+    _PAGE_MAP = {
+        "📊 Dashboard":  "dashboard",
+        "⚙️ Profiles":   "profiles",
+        "🛠️ Strategies": "strategies",
+    }
+    st.session_state["page"] = _PAGE_MAP[page_label]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
