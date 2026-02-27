@@ -179,7 +179,7 @@ Each visitor gets an isolated **workspace** — their own watchlist, custom prof
 
 ## App Navigation
 
-The app has three sections, accessible via the left sidebar radio:
+The app has three sections, accessible via the left sidebar radio (📊 Dashboard · ⚙️ Profiles · 🎛️ Generator):
 
 ### 📊 Dashboard
 - **Results grid**: Summary table showing verdict, scores, regime, and risk/reward for all watchlist tickers. Click any row to open the deep dive below.
