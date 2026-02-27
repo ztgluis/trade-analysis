@@ -97,10 +97,11 @@ class PineScriptGenerator:
             self._header(),
             self._inputs_section(),
             self._indicators_section(),
-            self._entry_conditions_section(),
-            self._strategy_logic_section(),
-            self._plots_section(),
         ]
+        if self.output_type != "indicator":
+            parts.append(self._entry_conditions_section())
+            parts.append(self._strategy_logic_section())
+        parts.append(self._plots_section())
         return "\n".join(parts)
 
     def validate(self) -> tuple[bool, list[str]]:
