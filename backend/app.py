@@ -375,18 +375,28 @@ def render_sidebar(workspace_id: str = "default") -> None:
             st.rerun()
 
     st.sidebar.divider()
-    page_label = st.sidebar.radio(
-        "Navigation",
-        ["📊 Dashboard", "⚙️ Profiles", "🎛️ Generator"],
-        label_visibility="collapsed",
-        key="nav_radio",
-    )
+
+    # Get page from query params or default to dashboard
     _PAGE_MAP = {
         "📊 Dashboard":  "dashboard",
         "⚙️ Profiles":   "profiles",
         "🎛️ Generator":  "strategies",
     }
+    _REVERSE_PAGE_MAP = {v: k for k, v in _PAGE_MAP.items()}
+
+    params = st.query_params
+    current_page = params.get("p", "dashboard")
+    default_label = _REVERSE_PAGE_MAP.get(current_page, "📊 Dashboard")
+
+    page_label = st.sidebar.radio(
+        "Navigation",
+        ["📊 Dashboard", "⚙️ Profiles", "🎛️ Generator"],
+        label_visibility="collapsed",
+        key="nav_radio",
+        index=["📊 Dashboard", "⚙️ Profiles", "🎛️ Generator"].index(default_label),
+    )
     st.session_state["page"] = _PAGE_MAP[page_label]
+    st.query_params["p"] = st.session_state["page"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
