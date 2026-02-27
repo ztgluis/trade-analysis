@@ -846,6 +846,23 @@ def render_strategies_page(workspace_id: str = "default") -> None:
 
         st.markdown("---")
 
+        # ── Script Type ───────────────────────────────────────────────────────
+        st.markdown("#### Script Type")
+        script_type_label = st.radio(
+            "Script type",
+            ["📈 Strategy", "📊 Indicator"],
+            horizontal=True,
+            key="gen_script_type",
+            label_visibility="collapsed",
+            captions=[
+                "Full strategy with entry/exit logic, SL/TP, and signal shapes",
+                "Indicator-only script — calculations + plots, no trade orders",
+            ],
+        )
+        is_indicator_gen = script_type_label == "📊 Indicator"
+
+        st.markdown("---")
+
         # ── Phase 2: Customisation ────────────────────────────────────────────
         st.markdown("#### Step 2 — Customise")
 
