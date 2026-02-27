@@ -149,7 +149,6 @@ def get_workspace_id() -> str:
     # Generate new workspace
     wid = str(uuid.uuid4())[:8]  # short 8-char ID is friendlier
     st.session_state["workspace_id"] = wid
-    st.query_params["w"] = wid
     return wid
 
 
