@@ -681,7 +681,7 @@ def render_profiles_page() -> None:
         "ones below and optionally pin specific tickers to them."
     )
 
-    tab1, tab2, tab3 = st.tabs(["📊 Built-in Profiles", "✏️ Custom Profiles", "🎯 Ticker Overrides"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Built-in Profiles", "✏️ Custom Profiles", "🎯 Ticker Overrides", "🛠️ Generate Strategy"])
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tab 1 — Built-in profiles (read-only)
