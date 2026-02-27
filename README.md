@@ -329,7 +329,7 @@ Returns win rate, profit factor, max drawdown, Sharpe ratio.
 
 ### Horizon (Time Perspective)
 
-Set in sidebar under **⏱ Horizon**. Controls:
+Set on the **Dashboard** page via the **⏱ Horizon** dropdown. Controls:
 - How many trading days to analyze (e.g., 1 month = 21 trading days)
 - Base rate lookback (win rate at this horizon)
 - **Does NOT change the data analyzed** — always uses 1 year of OHLCV, but scores/verdicts are calibrated for the selected horizon
