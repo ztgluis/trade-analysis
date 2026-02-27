@@ -166,9 +166,9 @@ class PineScriptGenerator:
     def _inputs_section(self) -> str:
         blocks: list[str] = [
             "",
-            "// \u2550" * 38,
+            "// " + "\u2550" * 74,
             "// \u2500\u2500\u2500 Inputs " + "\u2500" * 60,
-            "// \u2550" * 38,
+            "// " + "\u2550" * 74,
         ]
 
         sl_pct = self.profile.get("sl_pct", 5.0)
