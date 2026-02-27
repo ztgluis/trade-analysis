@@ -157,7 +157,7 @@ Each visitor gets an isolated **workspace** — their own watchlist, custom prof
 **How it works:**
 - On first visit, an 8-character token is auto-generated and added to the URL: `https://yourapp.streamlit.app/?w=a3f9c2d1`
 - Bookmarking that URL resumes your workspace on any device
-- All data (watchlist, profiles, overrides) is stored in Supabase scoped to your token
+- All data (watchlist, profiles, overrides, saved strategies) is stored in Supabase scoped to your token
 - Other users visiting the plain URL get their own fresh workspace
 
 **Workspace expander** (in the sidebar under 🔑 Workspace):
