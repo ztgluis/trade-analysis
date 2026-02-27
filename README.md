@@ -365,10 +365,10 @@ Each profile defines parameter ranges:
 
 ### Backtester (`backtester/`)
 
-Simulates historical trades using the GrowthSignalBot strategy:
+Simulates historical trades using the `LongSignalStrategy` (previously `GrowthSignalBot` — a backwards-compat shim still exists):
 
 ```bash
-python run_backtest.py --symbol GOOG --start 2020-01-01
+python run_backtest.py --ticker GOOG --period 3y
 ```
 
 Returns win rate, profit factor, max drawdown, Sharpe ratio.
