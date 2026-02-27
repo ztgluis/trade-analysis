@@ -380,7 +380,7 @@ def render_sidebar(workspace_id: str = "default") -> None:
     _PAGE_MAP = {
         "📊 Dashboard":  "dashboard",
         "⚙️ Profiles":   "profiles",
-        "🎛️ Generator":  "strategies",
+        "🎛️ Generator":  "generator",
     }
     _REVERSE_PAGE_MAP = {v: k for k, v in _PAGE_MAP.items()}
 
