@@ -916,67 +916,32 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
         wl = supabase_db.get_watchlist(workspace_id)
         st.session_state.watchlist = wl if wl else DEFAULT_WATCHLIST.copy()
 
-    # B. Top controls bar
-    col_add, col_run, col_hz = st.columns([4, 2, 2])
-    with col_add:
-        with st.form("add_ticker_form", clear_on_submit=True):
-            c1, c2 = st.columns([5, 1])
-            new_sym = c1.text_input("", placeholder="Add ticker…  e.g. AAPL",
-                                    label_visibility="collapsed", key="add_ticker_input")
-            if c2.form_submit_button("＋", use_container_width=True):
-                sym = new_sym.upper().strip()
-                if sym and sym not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(sym)
-                    supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
-                    st.rerun()
-    with col_run:
-        run_all = st.button("▶ Run Analysis", type="primary", use_container_width=True)
-    with col_hz:
-        horizon_label = st.selectbox(
-            "Horizon", list(HORIZON_MAP.keys()), index=2,
-            key="horizon_select", label_visibility="collapsed",
-        )
-        horizon_td = HORIZON_MAP[horizon_label]
+    # B. Horizon — read from session state BEFORE the selectbox renders at the
+    #    bottom.  Streamlit writes widget values to session_state before the
+    #    script runs, so this always reflects the user's current selection.
+    st.session_state.setdefault("horizon_select", "1 month")
+    horizon_label = st.session_state["horizon_select"]
+    if horizon_label not in HORIZON_MAP:
+        horizon_label = "1 month"
+    horizon_td = HORIZON_MAP[horizon_label]
 
-    # C. Ticker chips row
-    to_remove = None
-    watchlist = st.session_state.watchlist
-    if watchlist:
-        n = len(watchlist)
-        cols = st.columns(n * 2)
-        for i, sym in enumerate(watchlist):
-            r = st.session_state.get("results", {}).get(sym)
-            if r and not r.get("error"):
-                color_key = r.get("color", "grey")
-                emoji = {"green": "🟢", "lime": "🟡", "red": "🔴",
-                         "grey": "⚪", "yellow": "🟡"}.get(color_key, "⚪")
-            else:
-                emoji = "⚪"
-            if cols[i * 2].button(f"{emoji} {sym}", key=f"chip_{sym}",
-                                   use_container_width=True):
-                st.session_state["selected_ticker"] = sym
-                st.rerun()
-            if cols[i * 2 + 1].button("×", key=f"rm_{sym}",
-                                       use_container_width=True):
-                to_remove = sym
-    if to_remove:
-        st.session_state.watchlist.remove(to_remove)
-        supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
-        st.session_state.get("results", {}).pop(to_remove, None)
-        if st.session_state.get("selected_ticker") == to_remove:
-            st.session_state.pop("selected_ticker", None)
-        st.rerun()
-
-    # D. Analysis logic
+    # C. Analysis logic
+    # "▶ Run Analysis" (rendered below) sets _do_run_all=True and calls st.rerun().
+    # On the next render this flag is popped and the analysis block fires.
+    run_all = bool(st.session_state.pop("_do_run_all", False))
     results = st.session_state.get("results", {})
+
     if run_all or not results:
         results = {}
-        prog = st.progress(0, text="Running analysis…")
-        for i, ticker in enumerate(st.session_state.watchlist):
-            prog.progress((i + 1) / len(st.session_state.watchlist),
-                          text=f"Analyzing {ticker}…")
-            results[ticker] = analyze(ticker, horizon_td=horizon_td)
-        prog.empty()
+        if st.session_state.watchlist:
+            prog = st.progress(0, text="Running analysis…")
+            for i, ticker in enumerate(st.session_state.watchlist):
+                prog.progress(
+                    (i + 1) / len(st.session_state.watchlist),
+                    text=f"Analyzing {ticker}…",
+                )
+                results[ticker] = analyze(ticker, horizon_td=horizon_td)
+            prog.empty()
         st.session_state["results"]  = results
         st.session_state["horizon"]  = horizon_td
         st.session_state["last_run"] = datetime.datetime.now().strftime("%H:%M:%S")
@@ -986,13 +951,69 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
         st.session_state.pop("selected_ticker", None)
         st.rerun()
 
-    # E. Last run caption
+    # D. Last-run caption + results grid
     if st.session_state.get("last_run"):
         st.caption(f"Last run: {st.session_state['last_run']}")
 
-    # F. Results grid
-    st.divider()
     render_dashboard(results)
+
+    # E. Remove-selected action strip — appears below the table when a row is selected
+    sel_now = st.session_state.get("selected_ticker")
+    if sel_now and sel_now in st.session_state.watchlist:
+        rm_col, _ = st.columns([2, 6])
+        with rm_col:
+            if st.button(f"✕ Remove {sel_now}", key="btn_remove_selected"):
+                st.session_state.watchlist.remove(sel_now)
+                supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
+                st.session_state.get("results", {}).pop(sel_now, None)
+                st.session_state.pop("selected_ticker", None)
+                st.rerun()
+
+    # F. Bottom controls bar — styled as a table footer
+    with st.container(border=True):
+        col_add, col_run, col_hz = st.columns([4, 2, 2])
+
+        with col_add:
+            with st.form("add_ticker_form", clear_on_submit=True):
+                c1, c2 = st.columns([5, 1])
+                new_sym = c1.text_input(
+                    "", placeholder="Add ticker…  e.g. AAPL",
+                    label_visibility="collapsed", key="add_ticker_input",
+                )
+                if c2.form_submit_button("＋", use_container_width=True):
+                    sym = new_sym.upper().strip()
+                    if sym and sym not in st.session_state.watchlist:
+                        st.session_state.watchlist.append(sym)
+                        supabase_db.save_watchlist(
+                            st.session_state.watchlist, workspace_id
+                        )
+                        # Auto-run analysis for the new ticker immediately
+                        cur = st.session_state.get("results", {})
+                        with st.spinner(f"Analyzing {sym}…"):
+                            cur[sym] = analyze(sym, horizon_td=horizon_td)
+                        st.session_state["results"]  = cur
+                        st.session_state["selected_ticker"] = sym
+                        st.session_state["last_run"] = datetime.datetime.now().strftime(
+                            "%H:%M:%S"
+                        )
+                        st.rerun()
+
+        with col_run:
+            if st.button(
+                "▶ Run Analysis", type="primary",
+                use_container_width=True, key="btn_run_all",
+            ):
+                st.session_state["_do_run_all"] = True
+                st.rerun()
+
+        with col_hz:
+            st.selectbox(
+                "Horizon",
+                list(HORIZON_MAP.keys()),
+                index=list(HORIZON_MAP.keys()).index(horizon_label),
+                key="horizon_select",
+                label_visibility="collapsed",
+            )
 
     # G. Deep dive
     st.divider()
