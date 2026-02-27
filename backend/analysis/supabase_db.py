@@ -262,6 +262,54 @@ def remove_ticker_override(ticker: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API: Watchlist
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_watchlist() -> list[str]:
+    """Return the user's watchlist of tickers from Supabase or local JSON fallback."""
+    client = _get_supabase_client()
+
+    if client is None:
+        # Fallback to local JSON
+        return _load_json_data().get("watchlist", [])
+
+    try:
+        response = client.table("watchlist").select("tickers").limit(1).execute()
+        if response.data and len(response.data) > 0:
+            tickers = response.data[0].get("tickers", [])
+            return tickers if isinstance(tickers, list) else []
+        return []
+    except Exception as e:
+        logger.warning(f"Failed to fetch watchlist from Supabase: {e}. Falling back to JSON.")
+        return _load_json_data().get("watchlist", [])
+
+
+def save_watchlist(tickers: list[str]) -> None:
+    """Save the user's watchlist to Supabase or local JSON fallback."""
+    client = _get_supabase_client()
+
+    if client is None:
+        # Fallback to local JSON
+        data = _load_json_data()
+        data["watchlist"] = tickers
+        _save_json_data(data)
+        return
+
+    try:
+        # Upsert: update if exists, insert if not
+        client.table("watchlist").upsert(
+            {"id": 1, "tickers": tickers}  # Always use id=1 for single watchlist
+        ).execute()
+        logger.info(f"Saved watchlist with {len(tickers)} tickers to Supabase")
+    except Exception as e:
+        logger.warning(f"Failed to save watchlist to Supabase: {e}. Falling back to JSON.")
+        data = _load_json_data()
+        data["watchlist"] = tickers
+        _save_json_data(data)
+
+
 def migrate_json_to_supabase() -> bool:
     """
     One-time migration: sync local JSON to Supabase if Supabase is available.
@@ -275,6 +323,7 @@ def migrate_json_to_supabase() -> bool:
         json_data = _load_json_data()
         local_profiles = json_data.get("profiles", {})
         local_overrides = json_data.get("ticker_overrides", {})
+        local_watchlist = json_data.get("watchlist", [])
 
         # Check if Supabase is empty
         profiles_count = (
@@ -292,7 +341,11 @@ def migrate_json_to_supabase() -> bool:
         for ticker, profile_key in local_overrides.items():
             set_ticker_override(ticker, profile_key)
 
-        logger.info(f"Migrated {len(local_profiles)} profiles and {len(local_overrides)} overrides to Supabase")
+        # Migrate watchlist
+        if local_watchlist:
+            save_watchlist(local_watchlist)
+
+        logger.info(f"Migrated {len(local_profiles)} profiles, {len(local_overrides)} overrides, and watchlist to Supabase")
         return True
     except Exception as e:
         logger.warning(f"Migration failed: {e}")
