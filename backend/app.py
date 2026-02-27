@@ -1110,105 +1110,63 @@ def render_strategies_page(workspace_id: str = "default") -> None:
     # ══════════════════════════════════════════════════════════════════════
     with tab_lib:
 
-        # ══════════════════════════════════════════════════════════════════════
-        # Section 1 — Built-in Strategies  (read-only)
-        # ══════════════════════════════════════════════════════════════════════
-        st.markdown("#### 🔒 Built-in Strategies")
-        st.caption(
-            "Pre-built strategies shipped with the app — read-only.  "
-            "Use **🧪 Backtest** to test against any ticker, or **📋 View Code** "
-            "to copy into TradingView."
-        )
+        # Split DEFAULT_STRATEGIES and user strategies by type
+        bi_strats = [s for s in DEFAULT_STRATEGIES if not s.get("is_indicator")]
+        bi_inds   = [s for s in DEFAULT_STRATEGIES if s.get("is_indicator")]
 
-        bi_rows = []
-        for s in DEFAULT_STRATEGIES:
+        all_saved = supabase_db.get_saved_strategies(workspace_id)
+        # Indicators stored with entry_mode="—" (set by the Generate tab)
+        usr_strats = [s for s in all_saved if (s.get("entry_mode") or "—") not in ("—",)]
+        usr_inds   = [s for s in all_saved if (s.get("entry_mode") or "—") in ("—",)]
+
+        lib_strat_tab, lib_ind_tab = st.tabs([
+            f"📈 Strategies ({len(bi_strats) + len(usr_strats)})",
+            f"📊 Indicators ({len(bi_inds) + len(usr_inds)})",
+        ])
+
+        # ── helper: build a row dict from a strategy/indicator dict ──────────
+        def _lib_row(s: dict) -> dict:
             inds = s.get("indicators", [])
             inds_str = ", ".join(i.upper() for i in inds) if isinstance(inds, list) else str(inds)
-            bi_rows.append({
-                "Name":       s["name"],
-                "Profile":    s["profile_name"],
+            return {
+                "Name":       s.get("name", "—"),
+                "Profile":    s.get("profile_name", "—"),
                 "Indicators": inds_str or "—",
-                "Entry":      s["entry_mode"],
-                "TF":         s["timeframe"],
-            })
+                "Entry":      (s.get("entry_mode", "—") or "—").replace("_", " ").title(),
+                "TF":         s.get("timeframe", "—") or "—",
+            }
 
-        bi_event = st.dataframe(
-            pd.DataFrame(bi_rows),
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            key="lib_builtin_df",
-        )
+        def _lib_saved_date(s: dict) -> str:
+            created = s.get("created_at", "") or s.get("updated_at", "") or ""
+            if created:
+                try:
+                    from datetime import datetime as _dt
+                    return _dt.fromisoformat(
+                        created.replace("Z", "+00:00")
+                    ).strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+            return "—"
 
-        bi_sel = bi_event.selection.rows if bi_event.selection else []
-        if bi_sel:
-            bi_idx   = bi_sel[0]
-            bi_strat = DEFAULT_STRATEGIES[bi_idx]
-            bi_name  = bi_strat["name"]
-            bi_code  = bi_strat["code"]
-            st.markdown(f"**Selected:** {bi_name}  🔒 *built-in*")
-            bi_c1, bi_c2 = st.columns(2)
-            with bi_c1:
-                with st.expander("📋 View Code", expanded=False):
-                    st.code(bi_code, language="")
-                    st.download_button(
-                        "⬇️ Download .pine",
-                        data=bi_code,
-                        file_name=bi_name.replace(" ", "_") + ".pine",
-                        mime="text/plain",
-                        key=f"bi_dl_{bi_idx}",
-                    )
-            with bi_c2:
-                _lib_backtest_expander(bi_strat, f"bi_{bi_idx}")
-        else:
-            st.caption("↑ Click a built-in strategy to view its code or run a backtest.")
+        def _lib_user_crud(strategies: list[dict], key_prefix: str, show_backtest: bool = True) -> None:
+            """Render a user-library CRUD table for strategies or indicators."""
+            if not strategies:
+                st.caption("Nothing saved here yet. Use **⚡ Generate** to create and save scripts.")
+                return
 
-        st.markdown("---")
-
-        # ══════════════════════════════════════════════════════════════════════
-        # Section 2 — Your Library  (full CRUD)
-        # ══════════════════════════════════════════════════════════════════════
-        st.markdown("#### 📚 Your Library")
-
-        strategies = supabase_db.get_saved_strategies(workspace_id)
-
-        if not strategies:
-            st.info(
-                "No strategies saved yet.  "
-                "Go to the **⚡ Generate** tab, configure your strategy, "
-                "and click **💾 Save to Library**."
-            )
-        else:
-            lib_rows = []
+            rows = []
             for s in strategies:
-                inds = s.get("indicators", [])
-                inds_str = ", ".join(i.upper() for i in inds) if isinstance(inds, list) else str(inds)
-                created = s.get("created_at", "") or s.get("updated_at", "") or ""
-                if created:
-                    try:
-                        from datetime import datetime as _dt
-                        created = _dt.fromisoformat(
-                            created.replace("Z", "+00:00")
-                        ).strftime("%Y-%m-%d")
-                    except Exception:
-                        pass
-                lib_rows.append({
-                    "Name":       s.get("name", "—"),
-                    "Profile":    s.get("profile_name", "—"),
-                    "Indicators": inds_str or "—",
-                    "Entry":      (s.get("entry_mode", "—") or "—").replace("_", " ").title(),
-                    "TF":         s.get("timeframe", "—") or "—",
-                    "Saved":      created or "—",
-                })
+                row = _lib_row(s)
+                row["Saved"] = _lib_saved_date(s)
+                rows.append(row)
 
             lib_event = st.dataframe(
-                pd.DataFrame(lib_rows),
+                pd.DataFrame(rows),
                 use_container_width=True,
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
-                key="lib_df",
+                key=f"lib_df_{key_prefix}",
             )
 
             sel_rows = lib_event.selection.rows if lib_event.selection else []
@@ -1219,25 +1177,26 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                 sel_code  = sel_strat.get("code", "")
 
                 st.markdown(f"**Selected:** {sel_name}")
-                act_c1, act_c2, act_c3, act_c4 = st.columns(4)
+                n_cols = 4 if show_backtest else 3
+                cols = st.columns(n_cols)
 
-                with act_c1:
+                with cols[0]:
                     with st.expander("📋 View Code", expanded=False):
                         st.code(sel_code, language="")
-                        dl_fn = (sel_name.replace(" ", "_") or "strategy") + ".pine"
+                        dl_fn = (sel_name.replace(" ", "_") or "script") + ".pine"
                         st.download_button(
                             "⬇️ Download .pine",
                             data=sel_code, file_name=dl_fn,
-                            mime="text/plain", key=f"usr_dl_{sel_idx}",
+                            mime="text/plain", key=f"{key_prefix}_dl_{sel_idx}",
                         )
 
-                with act_c2:
+                with cols[1]:
                     with st.expander("✏️ Rename", expanded=False):
                         new_name = st.text_input(
                             "New name", value=sel_name,
-                            key=f"usr_rename_input_{sel_idx}",
+                            key=f"{key_prefix}_rename_input_{sel_idx}",
                         )
-                        if st.button("✅ Apply", key=f"usr_rename_btn_{sel_idx}"):
+                        if st.button("✅ Apply", key=f"{key_prefix}_rename_btn_{sel_idx}"):
                             new_name_clean = new_name.strip()
                             if new_name_clean and new_name_clean != sel_name:
                                 supabase_db.rename_strategy(sel_name, new_name_clean, workspace_id)
@@ -1248,23 +1207,121 @@ def render_strategies_page(workspace_id: str = "default") -> None:
                             else:
                                 st.info("Name is unchanged.")
 
-                with act_c3:
+                with cols[2]:
                     with st.expander("🗑️ Delete", expanded=False):
                         st.warning(f"Permanently delete **{sel_name}**?")
                         if st.button(
                             "🗑️ Confirm Delete",
-                            key=f"usr_del_btn_{sel_idx}",
+                            key=f"{key_prefix}_del_btn_{sel_idx}",
                             type="primary",
                         ):
                             supabase_db.delete_strategy(sel_name, workspace_id)
                             st.success(f"Deleted **{sel_name}**.")
                             st.rerun()
 
-                with act_c4:
-                    _lib_backtest_expander(sel_strat, f"usr_{sel_idx}")
-
+                if show_backtest:
+                    with cols[3]:
+                        _lib_backtest_expander(sel_strat, f"{key_prefix}_{sel_idx}")
             else:
-                st.caption("↑ Click a row to view, rename, backtest, or delete a strategy.")
+                st.caption("↑ Click a row to view, rename, or delete a script.")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # Strategies tab
+        # ══════════════════════════════════════════════════════════════════════
+        with lib_strat_tab:
+
+            # ── Built-in Strategies ───────────────────────────────────────────
+            st.markdown("#### 🔒 Built-in Strategies")
+            st.caption(
+                "Pre-built strategies shipped with the app — read-only.  "
+                "Use **🧪 Backtest** or **📋 View Code** to copy into TradingView."
+            )
+
+            if bi_strats:
+                bi_s_rows = [_lib_row(s) for s in bi_strats]
+                bi_s_event = st.dataframe(
+                    pd.DataFrame(bi_s_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key="lib_bi_strat_df",
+                )
+                bi_s_sel = bi_s_event.selection.rows if bi_s_event.selection else []
+                if bi_s_sel:
+                    bi_s = bi_strats[bi_s_sel[0]]
+                    st.markdown(f"**Selected:** {bi_s['name']}  🔒 *built-in*")
+                    bsc1, bsc2 = st.columns(2)
+                    with bsc1:
+                        with st.expander("📋 View Code", expanded=False):
+                            st.code(bi_s["code"], language="")
+                            st.download_button(
+                                "⬇️ Download .pine",
+                                data=bi_s["code"],
+                                file_name=bi_s["name"].replace(" ", "_") + ".pine",
+                                mime="text/plain",
+                                key=f"bi_s_dl_{bi_s_sel[0]}",
+                            )
+                    with bsc2:
+                        _lib_backtest_expander(bi_s, f"bi_s_{bi_s_sel[0]}")
+                else:
+                    st.caption("↑ Click a built-in strategy to view its code or run a backtest.")
+            else:
+                st.caption("No built-in strategies available.")
+
+            st.markdown("---")
+
+            # ── Your Strategies ───────────────────────────────────────────────
+            st.markdown("#### 📚 Your Strategies")
+            _lib_user_crud(usr_strats, key_prefix="ust", show_backtest=True)
+
+        # ══════════════════════════════════════════════════════════════════════
+        # Indicators tab
+        # ══════════════════════════════════════════════════════════════════════
+        with lib_ind_tab:
+
+            # ── Built-in Indicators ───────────────────────────────────────────
+            st.markdown("#### 🔒 Built-in Indicators")
+            st.caption(
+                "Pre-built indicator scripts shipped with the app — read-only.  "
+                "Use **📋 View Code** to copy into TradingView."
+            )
+
+            if bi_inds:
+                bi_i_rows = [_lib_row(s) for s in bi_inds]
+                # Drop the Entry column — not relevant for indicators
+                bi_i_df = pd.DataFrame(bi_i_rows).drop(columns=["Entry"], errors="ignore")
+                bi_i_event = st.dataframe(
+                    bi_i_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row",
+                    key="lib_bi_ind_df",
+                )
+                bi_i_sel = bi_i_event.selection.rows if bi_i_event.selection else []
+                if bi_i_sel:
+                    bi_i = bi_inds[bi_i_sel[0]]
+                    st.markdown(f"**Selected:** {bi_i['name']}  🔒 *built-in*")
+                    with st.expander("📋 View Code", expanded=False):
+                        st.code(bi_i["code"], language="")
+                        st.download_button(
+                            "⬇️ Download .pine",
+                            data=bi_i["code"],
+                            file_name=bi_i["name"].replace(" ", "_") + ".pine",
+                            mime="text/plain",
+                            key=f"bi_i_dl_{bi_i_sel[0]}",
+                        )
+                else:
+                    st.caption("↑ Click a built-in indicator to view its code.")
+            else:
+                st.caption("No built-in indicators available.")
+
+            st.markdown("---")
+
+            # ── Your Indicators ───────────────────────────────────────────────
+            st.markdown("#### 📊 Your Indicators")
+            _lib_user_crud(usr_inds, key_prefix="uid", show_backtest=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
