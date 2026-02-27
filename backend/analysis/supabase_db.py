@@ -272,14 +272,16 @@ def get_watchlist() -> list[str]:
     client = _get_supabase_client()
 
     if client is None:
-        # Fallback to local JSON
+        logger.debug("Supabase not available, loading watchlist from local JSON")
         return _load_json_data().get("watchlist", [])
 
     try:
         response = client.table("watchlist").select("tickers").limit(1).execute()
         if response.data and len(response.data) > 0:
             tickers = response.data[0].get("tickers", [])
+            logger.info(f"Loaded watchlist from Supabase: {tickers}")
             return tickers if isinstance(tickers, list) else []
+        logger.debug("Watchlist table is empty, returning empty list")
         return []
     except Exception as e:
         logger.warning(f"Failed to fetch watchlist from Supabase: {e}. Falling back to JSON.")
