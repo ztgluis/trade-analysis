@@ -240,12 +240,27 @@ def build_price_chart(r: dict) -> go.Figure:
     dates = df.index
     fig   = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=dates, y=df["close"], name="Price",
-        line=dict(color="#ffffff", width=2),
-        hovertemplate="%{x|%b %d}<br>$%{y:,.2f}<extra></extra>",
-    ))
+    # ── Candlestick bars ──────────────────────────────────────────────────────
+    has_ohlc = all(c in df.columns for c in ("open", "high", "low", "close"))
+    if has_ohlc:
+        fig.add_trace(go.Candlestick(
+            x=dates,
+            open=df["open"], high=df["high"],
+            low=df["low"],   close=df["close"],
+            name="Price",
+            increasing=dict(line=dict(color="#26a69a"), fillcolor="#26a69a"),
+            decreasing=dict(line=dict(color="#ef5350"), fillcolor="#ef5350"),
+            hoverinfo="x+y",
+        ))
+    else:
+        # Fallback to line if OHLC columns are missing for some reason
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["close"], name="Price",
+            line=dict(color="#ffffff", width=2),
+            hovertemplate="%{x|%b %d}<br>$%{y:,.2f}<extra></extra>",
+        ))
 
+    # ── Moving averages ───────────────────────────────────────────────────────
     for col, name, color, dash in [
         ("sma200", "SMA200", "#4488ff", "dot"),
         ("sma50",  "SMA50",  "#ff8844", "dot"),
@@ -258,6 +273,7 @@ def build_price_chart(r: dict) -> go.Figure:
                 hovertemplate=f"{name} $%{{y:,.2f}}<extra></extra>",
             ))
 
+    # ── Signal markers ────────────────────────────────────────────────────────
     signal_col_map = {
         "buy_signal":    "🔺 BUY",
         "bounce_signal": "⬤ BOUNCE",
@@ -273,8 +289,15 @@ def build_price_chart(r: dict) -> go.Figure:
         if sig_df.empty:
             continue
         style = SIGNAL_STYLES[label]
+        # Place BUY/BOUNCE markers below the low; SELL markers above the high
+        if "BUY" in label or "BOUNCE" in label:
+            y_vals = sig_df["low"] * 0.997 if "low" in sig_df.columns else sig_df["close"]
+        elif "SELL" in label:
+            y_vals = sig_df["high"] * 1.003 if "high" in sig_df.columns else sig_df["close"]
+        else:
+            y_vals = sig_df["close"]
         fig.add_trace(go.Scatter(
-            x=sig_df.index, y=sig_df["close"],
+            x=sig_df.index, y=y_vals,
             mode="markers", name=label,
             marker=dict(symbol=style["symbol"], color=style["color"],
                         size=style["size"], line=dict(width=1, color="#000")),
@@ -282,10 +305,13 @@ def build_price_chart(r: dict) -> go.Figure:
         ))
 
     fig.update_layout(
-        template="plotly_dark", height=400,
+        template="plotly_dark", height=420,
         margin=dict(l=0, r=0, t=10, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
-        xaxis=dict(showgrid=True, gridcolor="#333"),
+        xaxis=dict(
+            showgrid=True, gridcolor="#333",
+            rangeslider=dict(visible=False),   # hide default candlestick rangeslider
+        ),
         yaxis=dict(showgrid=True, gridcolor="#333", tickprefix="$"),
         hovermode="x unified",
     )
