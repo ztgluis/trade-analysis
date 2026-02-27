@@ -292,7 +292,7 @@ def render_sidebar() -> tuple[list[str], int, bool]:
     # ── Watchlist ──────────────────────────────────────────────────────────
     st.sidebar.subheader("📋 Watchlist")
     if "watchlist" not in st.session_state:
-        st.session_state.watchlist = DEFAULT_WATCHLIST.copy()
+        st.session_state.watchlist = load_watchlist()
 
     to_remove = None
     for sym in st.session_state.watchlist:
