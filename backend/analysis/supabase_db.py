@@ -517,3 +517,143 @@ def migrate_json_to_supabase(workspace_id: str = "default") -> bool:
     except Exception as e:
         logger.warning(f"Migration failed: {e}")
         return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API: Saved Strategies
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_saved_strategies(workspace_id: str = "default") -> list[dict]:
+    """Return all saved strategies for this workspace, newest first."""
+    client = _get_supabase_client()
+
+    if client is None:
+        return _get_strategies_for_workspace(_load_json_data(), workspace_id)
+
+    try:
+        response = (
+            client.table("saved_strategies")
+            .select("*")
+            .eq("workspace_id", workspace_id)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return response.data or []
+    except Exception as e:
+        logger.warning(f"Failed to fetch saved strategies from Supabase: {e}. Falling back to JSON.")
+        return _get_strategies_for_workspace(_load_json_data(), workspace_id)
+
+
+def save_strategy(
+    name: str,
+    code: str,
+    metadata: dict,
+    workspace_id: str = "default",
+) -> None:
+    """
+    Save (upsert) a generated Pine Script strategy.
+
+    Parameters
+    ----------
+    name         : human-readable strategy name (unique per workspace)
+    code         : full Pine Script v6 source code
+    metadata     : dict with keys profile_name, indicators, entry_mode, timeframe
+    workspace_id : workspace scope
+    """
+    client = _get_supabase_client()
+
+    row = {
+        "workspace_id": workspace_id,
+        "name":         name,
+        "code":         code,
+        "profile_name": metadata.get("profile_name", ""),
+        "indicators":   metadata.get("indicators", []),
+        "entry_mode":   metadata.get("entry_mode", "all_signals"),
+        "timeframe":    metadata.get("timeframe", "D"),
+    }
+
+    if client is None:
+        data  = _load_json_data()
+        strats = data.setdefault("saved_strategies", {}).setdefault(workspace_id, [])
+        for i, s in enumerate(strats):
+            if s.get("name") == name:
+                strats[i] = row
+                _save_json_data(data)
+                return
+        strats.append(row)
+        _save_json_data(data)
+        return
+
+    try:
+        client.table("saved_strategies").upsert(
+            row, on_conflict="name,workspace_id"
+        ).execute()
+        logger.info(f"Saved strategy '{name}' to Supabase (workspace={workspace_id})")
+    except Exception as e:
+        logger.warning(f"Failed to save strategy to Supabase: {e}. Falling back to JSON.")
+        data  = _load_json_data()
+        strats = data.setdefault("saved_strategies", {}).setdefault(workspace_id, [])
+        for i, s in enumerate(strats):
+            if s.get("name") == name:
+                strats[i] = row
+                _save_json_data(data)
+                return
+        strats.append(row)
+        _save_json_data(data)
+
+
+def delete_strategy(name: str, workspace_id: str = "default") -> None:
+    """Delete a saved strategy by name."""
+    client = _get_supabase_client()
+
+    if client is None:
+        data = _load_json_data()
+        strats = data.get("saved_strategies", {}).get(workspace_id, [])
+        data.setdefault("saved_strategies", {})[workspace_id] = [
+            s for s in strats if s.get("name") != name
+        ]
+        _save_json_data(data)
+        return
+
+    try:
+        client.table("saved_strategies").delete().eq("name", name).eq(
+            "workspace_id", workspace_id
+        ).execute()
+        logger.info(f"Deleted strategy '{name}' (workspace={workspace_id})")
+    except Exception as e:
+        logger.warning(f"Failed to delete strategy from Supabase: {e}. Falling back to JSON.")
+        data = _load_json_data()
+        strats = data.get("saved_strategies", {}).get(workspace_id, [])
+        data.setdefault("saved_strategies", {})[workspace_id] = [
+            s for s in strats if s.get("name") != name
+        ]
+        _save_json_data(data)
+
+
+def rename_strategy(
+    old_name: str, new_name: str, workspace_id: str = "default"
+) -> None:
+    """Rename a saved strategy."""
+    client = _get_supabase_client()
+
+    if client is None:
+        data = _load_json_data()
+        for s in data.get("saved_strategies", {}).get(workspace_id, []):
+            if s.get("name") == old_name:
+                s["name"] = new_name
+        _save_json_data(data)
+        return
+
+    try:
+        client.table("saved_strategies").update({"name": new_name}).eq(
+            "name", old_name
+        ).eq("workspace_id", workspace_id).execute()
+        logger.info(f"Renamed strategy '{old_name}' → '{new_name}' (workspace={workspace_id})")
+    except Exception as e:
+        logger.warning(f"Failed to rename strategy in Supabase: {e}. Falling back to JSON.")
+        data = _load_json_data()
+        for s in data.get("saved_strategies", {}).get(workspace_id, []):
+            if s.get("name") == old_name:
+                s["name"] = new_name
+        _save_json_data(data)
