@@ -148,6 +148,14 @@ def _get_watchlist_for_workspace(data: dict, workspace_id: str) -> list:
     return watchlist_raw.get(workspace_id, [])
 
 
+def _get_strategies_for_workspace(data: dict, workspace_id: str) -> list:
+    """Extract saved strategies list for a given workspace from JSON data."""
+    strats_raw = data.get("saved_strategies", {})
+    if isinstance(strats_raw, dict):
+        return strats_raw.get(workspace_id, [])
+    return []
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API: Custom Profiles
 # ─────────────────────────────────────────────────────────────────────────────
