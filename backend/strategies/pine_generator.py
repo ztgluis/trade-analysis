@@ -188,21 +188,22 @@ class PineScriptGenerator:
             "// " + "\u2550" * 74,
         ]
 
-        sl_pct = self.profile.get("sl_pct", 5.0)
-        tp_pct = self.profile.get("tp_pct", 15.0)
+        if self.output_type != "indicator":
+            sl_pct = self.profile.get("sl_pct", 5.0)
+            tp_pct = self.profile.get("tp_pct", 15.0)
 
-        # Strategy block (always present)
-        blocks.append(
-            "\n".join([
-                "",
-                "// Strategy / Exits",
-                f'sl_pct    = input.float({sl_pct}, "Stop Loss %",   group="Strategy", step=0.5, minval=0.5)',
-                f'tp_pct    = input.float({tp_pct}, "Take Profit %", group="Strategy", step=0.5, minval=1.0)',
-                f'entry_mode = input.string("{self._pine_entry_mode()}", "Entry Mode",',
-                '     options=["All Signals", "Buy Only", "Strong Buy Only"],',
-                '     group="Strategy")',
-            ])
-        )
+            # Strategy block (strategies only)
+            blocks.append(
+                "\n".join([
+                    "",
+                    "// Strategy / Exits",
+                    f'sl_pct    = input.float({sl_pct}, "Stop Loss %",   group="Strategy", step=0.5, minval=0.5)',
+                    f'tp_pct    = input.float({tp_pct}, "Take Profit %", group="Strategy", step=0.5, minval=1.0)',
+                    f'entry_mode = input.string("{self._pine_entry_mode()}", "Entry Mode",',
+                    '     options=["All Signals", "Buy Only", "Strong Buy Only"],',
+                    '     group="Strategy")',
+                ])
+            )
 
         # RSI inputs
         if self._has("rsi"):
