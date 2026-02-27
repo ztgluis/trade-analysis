@@ -61,11 +61,30 @@ ALTER TABLE watchlist
   UNIQUE (workspace_id);
 
 
--- ── 4. Verify ────────────────────────────────────────────────────────────────
+-- ── 4. saved_strategies (NEW — safe to run on fresh or existing installs) ────
+
+CREATE TABLE IF NOT EXISTS saved_strategies (
+  id           BIGSERIAL  PRIMARY KEY,
+  workspace_id TEXT       NOT NULL DEFAULT 'default',
+  name         TEXT       NOT NULL,
+  code         TEXT       NOT NULL,
+  profile_name TEXT,
+  indicators   JSONB      DEFAULT '[]',
+  entry_mode   TEXT       DEFAULT 'all_signals',
+  timeframe    TEXT       DEFAULT 'D',
+  created_at   TIMESTAMP  DEFAULT NOW(),
+  updated_at   TIMESTAMP  DEFAULT NOW(),
+  CONSTRAINT saved_strategies_name_workspace_key UNIQUE (name, workspace_id)
+);
+
+
+-- ── 5. Verify ────────────────────────────────────────────────────────────────
 
 -- Check that existing data is now in the 'default' workspace
 SELECT 'custom_profiles' AS tbl, COUNT(*) AS rows, workspace_id FROM custom_profiles GROUP BY workspace_id
 UNION ALL
 SELECT 'ticker_overrides', COUNT(*), workspace_id FROM ticker_overrides GROUP BY workspace_id
 UNION ALL
-SELECT 'watchlist', COUNT(*), workspace_id FROM watchlist GROUP BY workspace_id;
+SELECT 'watchlist', COUNT(*), workspace_id FROM watchlist GROUP BY workspace_id
+UNION ALL
+SELECT 'saved_strategies', COUNT(*), workspace_id FROM saved_strategies GROUP BY workspace_id;
