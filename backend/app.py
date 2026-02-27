@@ -71,6 +71,30 @@ HORIZON_MAP = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Workspace ID management
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_workspace_id() -> str:
+    """
+    Get or create the workspace ID for this session.
+    Stored in URL query params as 'w'. Falls back to session state.
+    On first visit, generates a new UUID and writes it to the URL.
+    """
+    params = st.query_params
+    if "w" in params:
+        wid = params["w"]
+        st.session_state["workspace_id"] = wid
+        return wid
+    if "workspace_id" in st.session_state:
+        return st.session_state["workspace_id"]
+    # Generate new workspace
+    wid = str(uuid.uuid4())[:8]  # short 8-char ID is friendlier
+    st.session_state["workspace_id"] = wid
+    st.query_params["w"] = wid
+    return wid
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dynamic profile helpers  (include custom profiles)
 # ─────────────────────────────────────────────────────────────────────────────
 
