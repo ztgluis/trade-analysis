@@ -1222,72 +1222,20 @@ def render_profiles_page(workspace_id: str = "default") -> None:
 def main() -> None:
     workspace_id = get_workspace_id()
 
-    # One-time migration: sync local JSON to Supabase if available
     if "migration_attempted" not in st.session_state:
         if supabase_db.migrate_json_to_supabase(workspace_id="default"):
             st.toast("✅ Synced local profiles to cloud", icon="🔄")
         st.session_state.migration_attempted = True
 
-    watchlist, horizon_td, run_all = render_sidebar(workspace_id)
+    render_sidebar(workspace_id)  # sets st.session_state["page"] via radio
 
-    # ── Page routing ──────────────────────────────────────────────────────────
     page = st.session_state.get("page", "dashboard")
-
-    if page == "settings":
+    if page == "profiles":
         render_profiles_page(workspace_id)
-        return
-
-    # ── Run analysis ─────────────────────────────────────────────────────────
-    if run_all or "results" not in st.session_state or not st.session_state.get("results"):
-        results: dict = {}
-        prog = st.progress(0, text="Running analysis…")
-        for i, ticker in enumerate(watchlist):
-            prog.progress((i + 1) / len(watchlist), text=f"Analyzing {ticker}…")
-            results[ticker] = analyze(ticker, horizon_td=horizon_td)
-        prog.empty()
-        st.session_state["results"]  = results
-        st.session_state["horizon"]  = horizon_td
-        st.session_state["last_run"] = datetime.datetime.now().strftime("%H:%M:%S")
+    elif page == "strategies":
+        render_strategies_page(workspace_id)
     else:
-        results = st.session_state.get("results", {})
-        # Re-run if horizon changed
-        if st.session_state.get("horizon") != horizon_td and results:
-            st.session_state["results"] = {}
-            st.session_state["override_cache"] = {}
-            st.rerun()
-
-    # ── Watchlist table (always visible) ─────────────────────────────────────
-    st.title("📈 Trade Analysis")
-    render_dashboard(results)
-
-    # ── Deep dive (shown when a ticker is selected) ───────────────────────────
-    sel = st.session_state.get("selected_ticker")
-    if not sel or sel not in results or results[sel].get("error"):
-        return
-
-    st.divider()
-
-    # Profile override handling
-    profile_opts        = get_profile_options()
-    chosen_profile_name = st.session_state.get(f"profile_override_{sel}")
-    auto_profile        = results[sel].get("profile", "Large-Cap Growth")
-
-    if chosen_profile_name and chosen_profile_name != auto_profile:
-        # Check cache first
-        cache_key = f"oc_{sel}_{chosen_profile_name}_{horizon_td}"
-        if cache_key not in st.session_state.get("override_cache", {}):
-            with st.spinner(f"Re-running {sel} with '{chosen_profile_name}' profile…"):
-                override_profile = profile_opts.get(chosen_profile_name)
-                r_show = analyze(sel, horizon_td=horizon_td, profile_override=override_profile)
-            if "override_cache" not in st.session_state:
-                st.session_state["override_cache"] = {}
-            st.session_state["override_cache"][cache_key] = r_show
-        else:
-            r_show = st.session_state["override_cache"][cache_key]
-    else:
-        r_show = results[sel]
-
-    render_deep_dive(r_show)
+        render_dashboard_page(workspace_id)
 
 
 if __name__ == "__main__":
