@@ -822,6 +822,7 @@ def render_strategies_page(workspace_id: str = "default") -> None:
     # Tab 1 — Generate
     # ══════════════════════════════════════════════════════════════════════
     with tab_gen:
+        st.query_params["gt"] = "generate"
         st.caption("Generate a TradingView Pine Script strategy or indicator from any profile.")
 
         # ── Phase 1: Template selection ───────────────────────────────────────
