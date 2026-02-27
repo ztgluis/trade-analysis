@@ -5,10 +5,14 @@ from configurable inputs, mirroring the structure of growth_signal_bot_v4.pine.
 Supported indicators:
     rsi, macd, adx, ema20, sma50, sma200, vwap, atr, fib, volume
 
-Entry modes:
+Entry modes (strategy only):
     "all_signals"      — buy_signal OR bounce_signal (EMA bounce, if EMA selected)
     "buy_only"         — scored buy_signal only
     "strong_buy_only"  — buy_signal AND bull_score >= strong threshold
+
+Output types:
+    "strategy"   — full strategy() script with entry/exit logic
+    "indicator"  — indicator() script with calculations + plots only (no trade logic)
 """
 from __future__ import annotations
 
