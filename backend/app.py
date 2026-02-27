@@ -712,7 +712,7 @@ def render_deep_dive(r: dict) -> None:
 # Profile Settings Page
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_profiles_page() -> None:
+def render_profiles_page(workspace_id: str = "default") -> None:
     # ── Header ────────────────────────────────────────────────────────────────
     col_back, col_title = st.columns([1, 6])
     with col_back:
