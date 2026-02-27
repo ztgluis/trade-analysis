@@ -593,6 +593,87 @@ class PineScriptGenerator:
 
         return "\n".join(blocks)
 
+    # ── VWAP renderer ──────────────────────────────────────────────────────────
+
+    def _render_vwap(self) -> str:
+        """
+        Generate the Pine Script VWAP block based on the configured anchor and source.
+
+        Anchor options:
+            "Session"  — uses the built-in ta.vwap() which resets each trading session.
+            "Week"     — manual cumulative reset every new calendar week.
+            "Month"    — manual cumulative reset every new calendar month.
+            "Quarter"  — manual cumulative reset at the start of each quarter (Jan/Apr/Jul/Oct).
+            "Year"     — manual cumulative reset every new calendar year.
+
+        Source options: HLC3 (typical price), HL2, Close, OHLC4.
+        """
+        anchor = self._params["vwap"].get("anchor", "Week")
+        source = self._params["vwap"].get("source", "HLC3")
+
+        src_exprs = {
+            "HLC3":  "(high + low + close) / 3",
+            "HL2":   "(high + low) / 2",
+            "Close": "close",
+            "OHLC4": "(open + high + low + close) / 4",
+        }
+        src_expr = src_exprs.get(source, "(high + low + close) / 3")
+
+        anchor_labels = {
+            "Session": "Session",
+            "Week":    "Weekly",
+            "Month":   "Monthly",
+            "Quarter": "Quarterly",
+            "Year":    "Yearly",
+        }
+        label = anchor_labels.get(anchor, anchor)
+
+        lines = [
+            "",
+            f"// {label} VWAP  (source: {source})",
+            f"vwap_src = {src_expr}",
+        ]
+
+        if anchor == "Session":
+            # Pine Script built-in resets automatically each session
+            lines.append("vwap_val = ta.vwap(vwap_src)")
+        else:
+            reset_conditions = {
+                "Week":    "weekofyear != weekofyear[1] or year != year[1]",
+                "Month":   "month != month[1] or year != year[1]",
+                "Quarter": (
+                    "year != year[1] or "
+                    "(month != month[1] and (month == 1 or month == 4 or month == 7 or month == 10))"
+                ),
+                "Year":    "year != year[1]",
+            }
+            reset_cond = reset_conditions.get(anchor, reset_conditions["Week"])
+
+            lines += [
+                f"new_period = {reset_cond}",
+                "",
+                "var float _vwap_vol_px  = 0.0",
+                "var float _vwap_vol     = 0.0",
+                "var float _vwap_sum_sq  = 0.0",
+                "var int   _vwap_bar_cnt = 0",
+                "",
+                "if new_period",
+                "    _vwap_vol_px  := 0.0",
+                "    _vwap_vol     := 0.0",
+                "    _vwap_sum_sq  := 0.0",
+                "    _vwap_bar_cnt := 0",
+                "",
+                "_vwap_vol_px  += vwap_src * volume",
+                "_vwap_vol     += volume",
+                "_vwap_bar_cnt += 1",
+                "",
+                "vwap_val      = _vwap_vol_px / _vwap_vol",
+                "_vwap_sum_sq += math.pow(vwap_src - vwap_val, 2)",
+                "vwap_stdev    = math.sqrt(_vwap_sum_sq / _vwap_bar_cnt)",
+            ]
+
+        return "\n".join(lines)
+
     # ── utilities ──────────────────────────────────────────────────────────────
 
     def _pine_entry_mode(self) -> str:
