@@ -1,4 +1,4 @@
-# Growth Signal Bot 📈
+# Trade Analysis 📈
 
 A decision-making engine for swing traders — analyzes bull/bear regimes, identifies entry setups, and calculates risk/reward ratios across multiple asset classes with tuned per-ticker profiles.
 
