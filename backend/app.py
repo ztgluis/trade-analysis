@@ -24,6 +24,10 @@ from analysis.asset_profiles  import (
 )
 from analysis import supabase_db
 from strategies.pine_generator import PineScriptGenerator
+from backtester.data   import fetch_ohlcv as _bt_fetch
+from backtester.engine import BacktestEngine
+from backtester        import metrics as bt_m
+from strategies.growth_signal_bot import GrowthSignalBot
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
