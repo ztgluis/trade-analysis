@@ -1703,7 +1703,7 @@ def main() -> None:
     page = st.session_state.get("page", "dashboard")
     if page == "profiles":
         render_profiles_page(workspace_id)
-    elif page == "strategies":
+    elif page == "generator":
         render_strategies_page(workspace_id)
     else:
         render_dashboard_page(workspace_id)
