@@ -662,248 +662,381 @@ def render_deep_dive(r: dict) -> None:
 
 def render_strategies_page(workspace_id: str = "default") -> None:
     st.title("🛠️ Strategies")
-    st.caption("Generate a TradingView Pine Script strategy from any profile.")
 
-    # ── Phase 1: Template selection ───────────────────────────────────────
-    st.markdown("#### Step 1 — Choose a Template")
+    tab_gen, tab_lib = st.tabs(["⚡ Generate", "📚 Library"])
 
-    # Initialise template session state on first load
-    if "gen_template" not in st.session_state:
-        st.session_state["gen_template"] = "Full Strategy"
+    # ══════════════════════════════════════════════════════════════════════
+    # Tab 1 — Generate
+    # ══════════════════════════════════════════════════════════════════════
+    with tab_gen:
+        st.caption("Generate a TradingView Pine Script strategy from any profile.")
 
-    template_choice = st.radio(
-        "Template",
-        options=list(INDICATOR_TEMPLATES.keys()),
-        index=list(INDICATOR_TEMPLATES.keys()).index(st.session_state["gen_template"]),
-        horizontal=True,
-        key="gen_template_radio",
-    )
+        # ── Phase 1: Template selection ───────────────────────────────────────
+        st.markdown("#### Step 1 — Choose a Template")
 
-    # When the template radio changes, update session state and sync indicator defaults
-    if template_choice != st.session_state["gen_template"]:
-        st.session_state["gen_template"] = template_choice
-        # Reset per-indicator checkbox states to match the new template
+        # Initialise template session state on first load
+        if "gen_template" not in st.session_state:
+            st.session_state["gen_template"] = "Full Strategy"
+
+        template_choice = st.radio(
+            "Template",
+            options=list(INDICATOR_TEMPLATES.keys()),
+            index=list(INDICATOR_TEMPLATES.keys()).index(st.session_state["gen_template"]),
+            horizontal=True,
+            key="gen_template_radio",
+        )
+
+        # When the template radio changes, update session state and sync indicator defaults
+        if template_choice != st.session_state["gen_template"]:
+            st.session_state["gen_template"] = template_choice
+            # Reset per-indicator checkbox states to match the new template
+            for ind in ALL_INDICATORS:
+                st.session_state[f"gen_ind_{ind}"] = ind in INDICATOR_TEMPLATES[template_choice]
+            st.rerun()
+
+        # Show info about the current template
+        tmpl_inds = INDICATOR_TEMPLATES[template_choice]
+        if tmpl_inds:
+            st.info(f"**{template_choice}** uses: {', '.join(tmpl_inds).upper()}")
+        else:
+            st.info("**Custom** — select indicators manually below.")
+
+        # Seed indicator checkbox defaults on first load (before any radio change)
         for ind in ALL_INDICATORS:
-            st.session_state[f"gen_ind_{ind}"] = ind in INDICATOR_TEMPLATES[template_choice]
-        st.rerun()
+            key = f"gen_ind_{ind}"
+            if key not in st.session_state:
+                st.session_state[key] = ind in INDICATOR_TEMPLATES[st.session_state["gen_template"]]
 
-    # Show info about the current template
-    tmpl_inds = INDICATOR_TEMPLATES[template_choice]
-    if tmpl_inds:
-        st.info(f"**{template_choice}** uses: {', '.join(tmpl_inds).upper()}")
-    else:
-        st.info("**Custom** — select indicators manually below.")
+        st.markdown("---")
 
-    # Seed indicator checkbox defaults on first load (before any radio change)
-    for ind in ALL_INDICATORS:
-        key = f"gen_ind_{ind}"
-        if key not in st.session_state:
-            st.session_state[key] = ind in INDICATOR_TEMPLATES[st.session_state["gen_template"]]
+        # ── Phase 2: Customisation ────────────────────────────────────────────
+        st.markdown("#### Step 2 — Customise")
 
-    st.markdown("---")
-
-    # ── Phase 2: Customisation ────────────────────────────────────────────
-    st.markdown("#### Step 2 — Customise")
-
-    # Profile dropdown (all profiles)
-    all_profiles_for_gen = get_all_profiles(workspace_id)
-    profile_display = {p["category"]: k for k, p in all_profiles_for_gen.items()}
-    selected_profile_name = st.selectbox(
-        "Analysis Profile",
-        options=list(profile_display.keys()),
-        key="gen_profile_sel",
-    )
-    selected_profile_key  = profile_display[selected_profile_name]
-    selected_profile_data = all_profiles_for_gen[selected_profile_key]
-
-    # ── Indicator checkboxes in 3 columns, grouped by category ────────────
-    st.markdown("**Select Indicators**")
-
-    INDICATOR_GROUPS = {
-        "Momentum":            [("rsi",   "RSI"),       ("macd",  "MACD")],
-        "Trend":               [("ema20", "Fast EMA"),  ("sma50", "Mid SMA"), ("sma200", "Slow SMA")],
-        "Filters":             [("adx",   "ADX"),       ("atr",   "ATR")],
-        "Support/Resistance":  [("vwap",  "VWAP"),      ("fib",   "Fibonacci Levels"), ("volume", "Volume")],
-    }
-
-    # Human-readable labels for expander titles
-    IND_LABELS = {
-        "rsi": "RSI", "macd": "MACD", "adx": "ADX", "atr": "ATR",
-        "ema20": "Fast EMA", "sma50": "Mid SMA", "sma200": "Slow SMA",
-        "vwap": "VWAP", "fib": "Fibonacci", "volume": "Volume",
-    }
-
-    cb_col1, cb_col2, cb_col3 = st.columns(3)
-    group_items = list(INDICATOR_GROUPS.items())
-
-    col_map = {0: cb_col1, 1: cb_col2, 2: cb_col3}
-    col_idx = 0
-    for group_name, indicators in group_items:
-        with col_map[col_idx % 3]:
-            st.markdown(f"**{group_name}**")
-            for ind_key, ind_label in indicators:
-                st.checkbox(ind_label, key=f"gen_ind_{ind_key}")
-        col_idx += 1
-
-    # Collect which indicators are currently checked
-    chosen_indicators = [ind for ind in ALL_INDICATORS if st.session_state.get(f"gen_ind_{ind}", False)]
-
-    # ── Per-indicator parameter expanders ────────────────────────────────
-    if chosen_indicators:
-        st.markdown("**Indicator Parameters**")
-
-        indicator_params: dict[str, dict] = {}
-
-        for ind in chosen_indicators:
-            with st.expander(IND_LABELS.get(ind, ind.upper()), expanded=False):
-                params: dict = {}
-                if ind == "rsi":
-                    params["length"] = st.number_input("Length", min_value=2, max_value=50,
-                                                       value=14, key="gen_param_rsi_length")
-                elif ind == "macd":
-                    params["fast"]   = st.number_input("Fast",   min_value=2, max_value=50,
-                                                       value=12, key="gen_param_macd_fast")
-                    params["slow"]   = st.number_input("Slow",   min_value=5, max_value=200,
-                                                       value=26, key="gen_param_macd_slow")
-                    params["signal"] = st.number_input("Signal", min_value=2, max_value=50,
-                                                       value=9,  key="gen_param_macd_signal")
-                elif ind == "adx":
-                    params["length"]    = st.number_input("Length",    min_value=2, max_value=50,
-                                                          value=14, key="gen_param_adx_length")
-                    params["smoothing"] = st.number_input("Smoothing", min_value=2, max_value=50,
-                                                          value=14, key="gen_param_adx_smoothing")
-                elif ind == "ema20":
-                    params["length"] = st.number_input("Length", min_value=2, max_value=200,
-                                                       value=20, key="gen_param_ema20_length")
-                elif ind == "sma50":
-                    params["length"] = st.number_input("Length", min_value=2, max_value=200,
-                                                       value=50, key="gen_param_sma50_length")
-                elif ind == "sma200":
-                    params["length"] = st.number_input("Length", min_value=2, max_value=500,
-                                                       value=200, key="gen_param_sma200_length")
-                elif ind == "atr":
-                    params["length"]     = st.number_input("Length",     min_value=2, max_value=50,
-                                                           value=14, key="gen_param_atr_length")
-                    params["multiplier"] = st.number_input("Multiplier", min_value=0.1,
-                                                           max_value=10.0, value=1.5, step=0.1,
-                                                           key="gen_param_atr_multiplier")
-                elif ind == "vwap":
-                    params["anchor"] = st.selectbox(
-                        "Anchor Period",
-                        options=["Session", "Week", "Month", "Quarter", "Year"],
-                        index=1,  # Week default
-                        key="gen_param_vwap_anchor",
-                        help="Session resets daily (uses ta.vwap built-in). "
-                             "Week/Month/Quarter/Year use a cumulative manual reset.",
-                    )
-                    params["source"] = st.selectbox(
-                        "Source",
-                        options=["HLC3", "HL2", "Close", "OHLC4"],
-                        index=0,  # HLC3 (typical price) default
-                        key="gen_param_vwap_source",
-                        help="HLC3 = (H+L+C)/3 · HL2 = (H+L)/2 · OHLC4 = (O+H+L+C)/4",
-                    )
-                elif ind == "fib":
-                    params["swing"] = st.number_input("Swing Lookback", min_value=5, max_value=200,
-                                                      value=50, key="gen_param_fib_swing")
-                elif ind == "volume":
-                    params["ma_length"] = st.number_input("MA Length", min_value=2, max_value=200,
-                                                          value=20, key="gen_param_volume_ma_length")
-                indicator_params[ind] = params
-
-    else:
-        indicator_params = {}
-
-    # ── Entry mode, strategy name, timeframe ─────────────────────────────
-    st.markdown("**Entry Mode**")
-    entry_mode_labels = {
-        "All Signals":      "all_signals",
-        "Buy Only":         "buy_only",
-        "Strong Buy Only":  "strong_buy_only",
-    }
-    entry_mode_label = st.radio(
-        "Entry mode",
-        options=list(entry_mode_labels.keys()),
-        captions=[
-            "Enter on any buy signal or EMA bounce",
-            "Enter only on scored buy signals",
-            "Enter only when buy signal AND bull score is strong",
-        ],
-        key="gen_entry_mode",
-        label_visibility="collapsed",
-    )
-    entry_mode = entry_mode_labels[entry_mode_label]
-
-    gen_col1, gen_col2 = st.columns(2)
-    with gen_col1:
-        strategy_name = st.text_input(
-            "Strategy Name",
-            value="My Generated Strategy",
-            key="gen_strategy_name",
+        # Profile dropdown (all profiles)
+        all_profiles_for_gen = get_all_profiles(workspace_id)
+        profile_display = {p["category"]: k for k, p in all_profiles_for_gen.items()}
+        selected_profile_name = st.selectbox(
+            "Analysis Profile",
+            options=list(profile_display.keys()),
+            key="gen_profile_sel",
         )
-    with gen_col2:
-        timeframe = st.selectbox(
-            "Timeframe",
-            options=["D", "60", "240", "W"],
-            format_func=lambda x: {"D": "Daily (D)", "60": "1 Hour (60)",
-                                    "240": "4 Hour (240)", "W": "Weekly (W)"}[x],
-            key="gen_timeframe",
-        )
+        selected_profile_key  = profile_display[selected_profile_name]
+        selected_profile_data = all_profiles_for_gen[selected_profile_key]
 
-    st.markdown("---")
+        # ── Indicator checkboxes in 3 columns, grouped by category ────────────
+        st.markdown("**Select Indicators**")
 
-    # ── Generate button ───────────────────────────────────────────────────
-    if st.button("Generate Pine Script", type="primary", key="gen_generate_btn"):
-        if not chosen_indicators:
-            st.error("Select at least one indicator before generating.")
+        INDICATOR_GROUPS = {
+            "Momentum":            [("rsi",   "RSI"),       ("macd",  "MACD")],
+            "Trend":               [("ema20", "Fast EMA"),  ("sma50", "Mid SMA"), ("sma200", "Slow SMA")],
+            "Filters":             [("adx",   "ADX"),       ("atr",   "ATR")],
+            "Support/Resistance":  [("vwap",  "VWAP"),      ("fib",   "Fibonacci Levels"), ("volume", "Volume")],
+        }
+
+        # Human-readable labels for expander titles
+        IND_LABELS = {
+            "rsi": "RSI", "macd": "MACD", "adx": "ADX", "atr": "ATR",
+            "ema20": "Fast EMA", "sma50": "Mid SMA", "sma200": "Slow SMA",
+            "vwap": "VWAP", "fib": "Fibonacci", "volume": "Volume",
+        }
+
+        cb_col1, cb_col2, cb_col3 = st.columns(3)
+        group_items = list(INDICATOR_GROUPS.items())
+
+        col_map = {0: cb_col1, 1: cb_col2, 2: cb_col3}
+        col_idx = 0
+        for group_name, indicators in group_items:
+            with col_map[col_idx % 3]:
+                st.markdown(f"**{group_name}**")
+                for ind_key, ind_label in indicators:
+                    st.checkbox(ind_label, key=f"gen_ind_{ind_key}")
+            col_idx += 1
+
+        # Collect which indicators are currently checked
+        chosen_indicators = [ind for ind in ALL_INDICATORS if st.session_state.get(f"gen_ind_{ind}", False)]
+
+        # ── Per-indicator parameter expanders ────────────────────────────────
+        if chosen_indicators:
+            st.markdown("**Indicator Parameters**")
+
+            indicator_params: dict[str, dict] = {}
+
+            for ind in chosen_indicators:
+                with st.expander(IND_LABELS.get(ind, ind.upper()), expanded=False):
+                    params: dict = {}
+                    if ind == "rsi":
+                        params["length"] = st.number_input("Length", min_value=2, max_value=50,
+                                                           value=14, key="gen_param_rsi_length")
+                    elif ind == "macd":
+                        params["fast"]   = st.number_input("Fast",   min_value=2, max_value=50,
+                                                           value=12, key="gen_param_macd_fast")
+                        params["slow"]   = st.number_input("Slow",   min_value=5, max_value=200,
+                                                           value=26, key="gen_param_macd_slow")
+                        params["signal"] = st.number_input("Signal", min_value=2, max_value=50,
+                                                           value=9,  key="gen_param_macd_signal")
+                    elif ind == "adx":
+                        params["length"]    = st.number_input("Length",    min_value=2, max_value=50,
+                                                              value=14, key="gen_param_adx_length")
+                        params["smoothing"] = st.number_input("Smoothing", min_value=2, max_value=50,
+                                                              value=14, key="gen_param_adx_smoothing")
+                    elif ind == "ema20":
+                        params["length"] = st.number_input("Length", min_value=2, max_value=200,
+                                                           value=20, key="gen_param_ema20_length")
+                    elif ind == "sma50":
+                        params["length"] = st.number_input("Length", min_value=2, max_value=200,
+                                                           value=50, key="gen_param_sma50_length")
+                    elif ind == "sma200":
+                        params["length"] = st.number_input("Length", min_value=2, max_value=500,
+                                                           value=200, key="gen_param_sma200_length")
+                    elif ind == "atr":
+                        params["length"]     = st.number_input("Length",     min_value=2, max_value=50,
+                                                               value=14, key="gen_param_atr_length")
+                        params["multiplier"] = st.number_input("Multiplier", min_value=0.1,
+                                                               max_value=10.0, value=1.5, step=0.1,
+                                                               key="gen_param_atr_multiplier")
+                    elif ind == "vwap":
+                        params["anchor"] = st.selectbox(
+                            "Anchor Period",
+                            options=["Session", "Week", "Month", "Quarter", "Year"],
+                            index=1,  # Week default
+                            key="gen_param_vwap_anchor",
+                            help="Session resets daily (uses ta.vwap built-in). "
+                                 "Week/Month/Quarter/Year use a cumulative manual reset.",
+                        )
+                        params["source"] = st.selectbox(
+                            "Source",
+                            options=["HLC3", "HL2", "Close", "OHLC4"],
+                            index=0,  # HLC3 (typical price) default
+                            key="gen_param_vwap_source",
+                            help="HLC3 = (H+L+C)/3 · HL2 = (H+L)/2 · OHLC4 = (O+H+L+C)/4",
+                        )
+                    elif ind == "fib":
+                        params["swing"] = st.number_input("Swing Lookback", min_value=5, max_value=200,
+                                                          value=50, key="gen_param_fib_swing")
+                    elif ind == "volume":
+                        params["ma_length"] = st.number_input("MA Length", min_value=2, max_value=200,
+                                                              value=20, key="gen_param_volume_ma_length")
+                    indicator_params[ind] = params
+
         else:
-            with st.spinner("Generating Pine Script…"):
-                gen = PineScriptGenerator(
-                    profile=selected_profile_data,
-                    indicators=chosen_indicators,
-                    indicator_params=indicator_params,
-                    strategy_name=strategy_name,
-                    entry_mode=entry_mode,
-                    timeframe=timeframe,
+            indicator_params = {}
+
+        # ── Entry mode, strategy name, timeframe ─────────────────────────────
+        st.markdown("**Entry Mode**")
+        entry_mode_labels = {
+            "All Signals":      "all_signals",
+            "Buy Only":         "buy_only",
+            "Strong Buy Only":  "strong_buy_only",
+        }
+        entry_mode_label = st.radio(
+            "Entry mode",
+            options=list(entry_mode_labels.keys()),
+            captions=[
+                "Enter on any buy signal or EMA bounce",
+                "Enter only on scored buy signals",
+                "Enter only when buy signal AND bull score is strong",
+            ],
+            key="gen_entry_mode",
+            label_visibility="collapsed",
+        )
+        entry_mode = entry_mode_labels[entry_mode_label]
+
+        gen_col1, gen_col2 = st.columns(2)
+        with gen_col1:
+            strategy_name = st.text_input(
+                "Strategy Name",
+                value="My Generated Strategy",
+                key="gen_strategy_name",
+            )
+        with gen_col2:
+            timeframe = st.selectbox(
+                "Timeframe",
+                options=["D", "60", "240", "W"],
+                format_func=lambda x: {"D": "Daily (D)", "60": "1 Hour (60)",
+                                        "240": "4 Hour (240)", "W": "Weekly (W)"}[x],
+                key="gen_timeframe",
+            )
+
+        st.markdown("---")
+
+        # ── Generate button ───────────────────────────────────────────────────
+        if st.button("Generate Pine Script", type="primary", key="gen_generate_btn"):
+            if not chosen_indicators:
+                st.error("Select at least one indicator before generating.")
+            else:
+                with st.spinner("Generating Pine Script…"):
+                    gen = PineScriptGenerator(
+                        profile=selected_profile_data,
+                        indicators=chosen_indicators,
+                        indicator_params=indicator_params,
+                        strategy_name=strategy_name,
+                        entry_mode=entry_mode,
+                        timeframe=timeframe,
+                    )
+                    code = gen.generate()
+                    st.session_state["gen_code"] = code
+
+        # ── Show results if code has been generated ───────────────────────────
+        if st.session_state.get("gen_code"):
+            code = st.session_state["gen_code"]
+            st.markdown("#### Generated Pine Script")
+
+            # Validate / lint
+            gen_for_validate = PineScriptGenerator(
+                profile=selected_profile_data,
+                indicators=chosen_indicators,
+                indicator_params=indicator_params,
+                strategy_name=strategy_name,
+                entry_mode=entry_mode,
+                timeframe=timeframe,
+            )
+            is_valid, messages = gen_for_validate.validate()
+
+            if is_valid:
+                st.success("Lint passed — no issues found.")
+            else:
+                for msg in messages:
+                    if "error" in msg.lower():
+                        st.error(msg)
+                    else:
+                        st.warning(msg)
+
+            st.code(code, language="")
+
+            dl_name = (strategy_name.strip().replace(" ", "_") or "strategy") + ".pine"
+            st.download_button(
+                label="⬇️ Download .pine file",
+                data=code,
+                file_name=dl_name,
+                mime="text/plain",
+                key="gen_download_btn",
+            )
+
+            # ── Save to Library ───────────────────────────────────────────────
+            st.markdown("---")
+            save_c1, save_c2 = st.columns([4, 1])
+            with save_c1:
+                save_name = st.text_input(
+                    "Save as",
+                    value=strategy_name,
+                    key="gen_save_name",
+                    placeholder="Strategy name…",
                 )
-                code = gen.generate()
-                st.session_state["gen_code"] = code
+            with save_c2:
+                st.write("")  # vertical alignment spacer
+                if st.button("💾 Save to Library", use_container_width=True, key="gen_save_btn"):
+                    name_clean = save_name.strip()
+                    if name_clean:
+                        metadata = {
+                            "profile_name": selected_profile_name,
+                            "indicators":   chosen_indicators,
+                            "entry_mode":   entry_mode,
+                            "timeframe":    timeframe,
+                        }
+                        supabase_db.save_strategy(name_clean, code, metadata, workspace_id)
+                        st.success(f"✅ Saved **{name_clean}** to the Library.")
+                    else:
+                        st.error("Enter a strategy name before saving.")
 
-    # ── Show results if code has been generated ───────────────────────────
-    if st.session_state.get("gen_code"):
-        code = st.session_state["gen_code"]
-        st.markdown("#### Generated Pine Script")
+    # ══════════════════════════════════════════════════════════════════════
+    # Tab 2 — Library
+    # ══════════════════════════════════════════════════════════════════════
+    with tab_lib:
+        st.markdown("#### 📚 Saved Strategies")
 
-        # Validate / lint
-        gen_for_validate = PineScriptGenerator(
-            profile=selected_profile_data,
-            indicators=chosen_indicators,
-            indicator_params=indicator_params,
-            strategy_name=strategy_name,
-            entry_mode=entry_mode,
-            timeframe=timeframe,
-        )
-        is_valid, messages = gen_for_validate.validate()
+        strategies = supabase_db.get_saved_strategies(workspace_id)
 
-        if is_valid:
-            st.success("Lint passed — no issues found.")
+        if not strategies:
+            st.info(
+                "No strategies saved yet.  "
+                "Generate one in the **⚡ Generate** tab and press **💾 Save to Library**."
+            )
         else:
-            for msg in messages:
-                if "error" in msg.lower():
-                    st.error(msg)
-                else:
-                    st.warning(msg)
+            # ── Summary table ─────────────────────────────────────────────────
+            lib_rows = []
+            for s in strategies:
+                inds = s.get("indicators", [])
+                inds_str = ", ".join(i.upper() for i in inds) if isinstance(inds, list) else str(inds)
+                created = s.get("created_at", "") or s.get("updated_at", "") or ""
+                if created:
+                    try:
+                        from datetime import datetime as _dt
+                        created = _dt.fromisoformat(
+                            created.replace("Z", "+00:00")
+                        ).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                lib_rows.append({
+                    "Name":       s.get("name", "—"),
+                    "Profile":    s.get("profile_name", "—"),
+                    "Indicators": inds_str or "—",
+                    "Entry":      (s.get("entry_mode", "—") or "—").replace("_", " ").title(),
+                    "TF":         s.get("timeframe", "—") or "—",
+                    "Saved":      created or "—",
+                })
 
-        st.code(code, language="")
+            lib_df = pd.DataFrame(lib_rows)
+            lib_event = st.dataframe(
+                lib_df,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="lib_df",
+            )
 
-        dl_name = (strategy_name.strip().replace(" ", "_") or "strategy") + ".pine"
-        st.download_button(
-            label="Download .pine file",
-            data=code,
-            file_name=dl_name,
-            mime="text/plain",
-            key="gen_download_btn",
-        )
+            # ── Action area for selected strategy ─────────────────────────────
+            sel_rows = lib_event.selection.rows if lib_event.selection else []
+            if sel_rows:
+                sel_idx  = sel_rows[0]
+                sel_strat = strategies[sel_idx]
+                sel_name  = sel_strat.get("name", "")
+                sel_code  = sel_strat.get("code", "")
+
+                st.markdown(f"**Selected:** {sel_name}")
+                act_c1, act_c2, act_c3 = st.columns(3)
+
+                with act_c1:
+                    with st.expander("📋 View Code", expanded=False):
+                        st.code(sel_code, language="")
+                        dl_fn = (sel_name.replace(" ", "_") or "strategy") + ".pine"
+                        st.download_button(
+                            "⬇️ Download .pine",
+                            data=sel_code,
+                            file_name=dl_fn,
+                            mime="text/plain",
+                            key=f"lib_dl_{sel_idx}",
+                        )
+
+                with act_c2:
+                    with st.expander("✏️ Rename", expanded=False):
+                        new_name = st.text_input(
+                            "New name", value=sel_name, key=f"lib_rename_input_{sel_idx}"
+                        )
+                        if st.button("✅ Apply", key=f"lib_rename_btn_{sel_idx}"):
+                            new_name_clean = new_name.strip()
+                            if new_name_clean and new_name_clean != sel_name:
+                                supabase_db.rename_strategy(sel_name, new_name_clean, workspace_id)
+                                st.success(f"Renamed to **{new_name_clean}**")
+                                st.rerun()
+                            elif not new_name_clean:
+                                st.error("Name cannot be empty.")
+                            else:
+                                st.info("Name is unchanged.")
+
+                with act_c3:
+                    with st.expander("🗑️ Delete", expanded=False):
+                        st.warning(f"Permanently delete **{sel_name}**?")
+                        if st.button(
+                            "🗑️ Confirm Delete",
+                            key=f"lib_del_btn_{sel_idx}",
+                            type="primary",
+                        ):
+                            supabase_db.delete_strategy(sel_name, workspace_id)
+                            st.success(f"Deleted **{sel_name}**.")
+                            st.rerun()
+            else:
+                st.caption("↑ Click a row to view, rename, or delete a strategy.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
