@@ -67,7 +67,8 @@ In Supabase **SQL Editor**, run:
 ```sql
 CREATE TABLE custom_profiles (
   id BIGSERIAL PRIMARY KEY,
-  profile_name TEXT UNIQUE NOT NULL,
+  profile_name TEXT NOT NULL,
+  workspace_id TEXT NOT NULL DEFAULT 'default',
   category TEXT NOT NULL,
   rsi_bull_min INTEGER NOT NULL,
   rsi_bull_max INTEGER NOT NULL,
@@ -76,24 +77,34 @@ CREATE TABLE custom_profiles (
   tp_pct DECIMAL NOT NULL,
   description TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT custom_profiles_name_workspace_key UNIQUE (profile_name, workspace_id)
 );
 
 CREATE TABLE ticker_overrides (
   id BIGSERIAL PRIMARY KEY,
   ticker TEXT NOT NULL,
-  profile_name TEXT NOT NULL REFERENCES custom_profiles(profile_name) ON DELETE CASCADE,
+  profile_name TEXT NOT NULL,
+  workspace_id TEXT NOT NULL DEFAULT 'default',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(ticker)
+  CONSTRAINT ticker_overrides_ticker_workspace_key UNIQUE (ticker, workspace_id),
+  CONSTRAINT ticker_overrides_profile_workspace_fkey
+    FOREIGN KEY (profile_name, workspace_id)
+    REFERENCES custom_profiles (profile_name, workspace_id)
+    ON DELETE CASCADE
 );
 
 CREATE TABLE watchlist (
   id BIGSERIAL PRIMARY KEY,
+  workspace_id TEXT NOT NULL DEFAULT 'default',
   tickers JSONB NOT NULL DEFAULT '[]',
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT watchlist_workspace_key UNIQUE (workspace_id)
 );
 ```
+
+> **Existing installation?** If you already have these tables without `workspace_id`, run the migration script at `docs/supabase_workspace_migration.sql` instead.
 
 **Step 3: Local Development Setup**
 
