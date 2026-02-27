@@ -588,19 +588,20 @@ class PineScriptGenerator:
                 'plot(fib_618, "Fib 61.8%", color=color.new(color.yellow, 40), linewidth=1)',
             ])
 
-        # Buy signal shapes
-        blocks.append("")
-        blocks.append(
-            'plotshape(buy_signal, title="Buy", style=shape.triangleup, '
-            'location=location.belowbar, color=color.new(color.green, 0), size=size.normal)'
-        )
-        if self._has("ema20"):
+        if self.output_type != "indicator":
+            # Buy signal shapes (strategy only — reference buy_signal/bounce_signal)
+            blocks.append("")
             blocks.append(
-                'plotshape(bounce_signal, title="Bounce", style=shape.circle, '
-                'location=location.belowbar, color=color.new(color.aqua, 0), size=size.small)'
+                'plotshape(buy_signal, title="Buy", style=shape.triangleup, '
+                'location=location.belowbar, color=color.new(color.green, 0), size=size.normal)'
             )
+            if self._has("ema20"):
+                blocks.append(
+                    'plotshape(bounce_signal, title="Bounce", style=shape.circle, '
+                    'location=location.belowbar, color=color.new(color.aqua, 0), size=size.small)'
+                )
 
-        # Regime background (when sma200 selected)
+        # Regime background (when sma200 selected — works for both types)
         if self._has("sma200"):
             blocks.extend([
                 "",
