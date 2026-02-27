@@ -553,7 +553,7 @@ class PineScriptGenerator:
     def _strategy_logic_section(self) -> str:
         lines = [
             "",
-            "// \u2500\u2500\u2500 Strategy Logic " + "\u2500" * 52,
+            "// \u2500\u2500\u2500 Strategy Logic " + "\u2500" * 51,
             "",
             "long_entry = qualify_buy and strategy.position_size == 0",
             "",
