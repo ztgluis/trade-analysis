@@ -102,9 +102,23 @@ CREATE TABLE watchlist (
   updated_at TIMESTAMP DEFAULT NOW(),
   CONSTRAINT watchlist_workspace_key UNIQUE (workspace_id)
 );
+
+CREATE TABLE saved_strategies (
+  id           BIGSERIAL  PRIMARY KEY,
+  workspace_id TEXT       NOT NULL DEFAULT 'default',
+  name         TEXT       NOT NULL,
+  code         TEXT       NOT NULL,
+  profile_name TEXT,
+  indicators   JSONB      DEFAULT '[]',
+  entry_mode   TEXT       DEFAULT 'all_signals',
+  timeframe    TEXT       DEFAULT 'D',
+  created_at   TIMESTAMP  DEFAULT NOW(),
+  updated_at   TIMESTAMP  DEFAULT NOW(),
+  CONSTRAINT saved_strategies_name_workspace_key UNIQUE (name, workspace_id)
+);
 ```
 
-> **Existing installation?** If you already have these tables without `workspace_id`, run the migration script at `docs/supabase_workspace_migration.sql` instead.
+> **Existing installation?** If you already have these tables without `workspace_id`, run the migration script at `docs/supabase_workspace_migration.sql` instead. The `saved_strategies` table uses `CREATE TABLE IF NOT EXISTS` so it is safe to re-run on any install.
 
 **Step 3: Local Development Setup**
 
