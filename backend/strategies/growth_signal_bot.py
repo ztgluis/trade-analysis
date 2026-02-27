@@ -1,5 +1,5 @@
 """
-Growth Signal Bot v4.3 — Python port of growth_signal_bot_v4.pine
+Growth Signal Bot v4.3 — Python strategy engine for Trade Analysis
 
 16-point scoring system (v4.3 adds ADX + Fibonacci):
   Trend (3):        regime/200 SMA (2) + above 50 SMA (1)
