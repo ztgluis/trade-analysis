@@ -408,7 +408,7 @@ class PineScriptGenerator:
         if self._has("ema20"):
             gate_lines.append("ema_gate    = close > ema20")
         if self._has("vwap"):
-            gate_lines.append("vwap_gate   = close > vwap_weekly")
+            gate_lines.append("vwap_gate   = close > vwap_val")
         if self._has("volume"):
             gate_lines.append("vol_gate    = volume > vol_ma")
 
