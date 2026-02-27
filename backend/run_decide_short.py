@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_decide_short.py  —  Growth Signal Bot SHORT Decision Engine
+run_decide_short.py  —  Trade Analysis SHORT Decision Engine
 
 Answers the question: "Given the current market state for TICKER, does the
 strategy's data support ENTERING or MAINTAINING a short position?"
