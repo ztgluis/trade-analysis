@@ -202,11 +202,22 @@ The app has three sections, accessible via the left sidebar radio:
 - Overrides persist automatically
 
 ### 🛠️ Strategies
-- Generate a TradingView Pine Script strategy from any profile
+
+**Tab 1 — ⚡ Generate**
 - Choose a **template** (Momentum Only / Trend+Momentum / Full Strategy / Custom)
-- Toggle individual **indicators** (RSI, MACD, ADX, EMA, SMA, VWAP, ATR, Fibonacci, Volume) and configure their parameters
+- Toggle individual **indicators** (RSI, MACD, ADX, Fast EMA, Mid SMA, Slow SMA, VWAP, ATR, Fibonacci, Volume) and configure their parameters
+  - **VWAP** supports anchor period (Session / Week / Month / Quarter / Year) and source (HLC3 / HL2 / Close / OHLC4)
+  - EMA/SMA lengths are user-configurable; labels reflect role (Fast/Mid/Slow) rather than fixed period
 - Set **entry mode** (All Signals / Buy Only / Strong Buy Only), strategy name, and timeframe
-- Preview generated code + lint validation, then **download as `.pine` file**
+- Preview generated code + lint validation, then **download as `.pine` file** or **💾 Save to Library**
+
+**Tab 2 — 📚 Library**
+- Browse all saved strategies in a sortable table (Name, Profile, Indicators, Entry Mode, Timeframe, Saved date)
+- Click any row to reveal per-strategy actions:
+  - **📋 View Code** — view full Pine Script source + download `.pine`
+  - **✏️ Rename** — change the strategy name
+  - **🗑️ Delete** — permanently remove the strategy
+- Saved strategies are workspace-scoped — each workspace has its own library
 
 ### Deep Dive (Per-Ticker)
 - **Verdict + Profile Badge**: Current recommendation with applied profile
