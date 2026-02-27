@@ -91,21 +91,83 @@ def _save_json_data(data: dict) -> None:
         logger.error(f"Failed to save local JSON: {e}")
 
 
+def _is_nested_profiles(profiles_data: dict) -> bool:
+    """
+    Detect whether profiles data uses the new nested format.
+
+    New format: {"default": {"profile_name": {...}}, "workspace_id": {...}}
+    Old format: {"profile_name": {...}}
+
+    We detect old format when none of the top-level values is a dict-of-dicts.
+    """
+    if not profiles_data:
+        return True  # empty — treat as new format
+    for v in profiles_data.values():
+        if isinstance(v, dict):
+            # If the value contains profile keys (rsi_bull_min etc.), it is old flat format
+            if "rsi_bull_min" in v or "category" in v:
+                return False
+    return True
+
+
+def _get_profiles_for_workspace(data: dict, workspace_id: str) -> dict:
+    """Extract profiles dict for a given workspace, handling old flat format."""
+    profiles_raw = data.get("profiles", {})
+    if _is_nested_profiles(profiles_raw):
+        return profiles_raw.get(workspace_id, {})
+    else:
+        # Old flat format — belongs to "default" workspace
+        if workspace_id == "default":
+            return profiles_raw
+        return {}
+
+
+def _get_overrides_for_workspace(data: dict, workspace_id: str) -> dict:
+    """Extract ticker_overrides dict for a given workspace, handling old flat format."""
+    overrides_raw = data.get("ticker_overrides", {})
+    if not overrides_raw:
+        return {}
+    # Detect old flat format: values are strings (profile keys), not dicts
+    first_val = next(iter(overrides_raw.values()), None)
+    if isinstance(first_val, str):
+        # Old flat format — belongs to "default" workspace
+        if workspace_id == "default":
+            return overrides_raw
+        return {}
+    return overrides_raw.get(workspace_id, {})
+
+
+def _get_watchlist_for_workspace(data: dict, workspace_id: str) -> list:
+    """Extract watchlist for a given workspace, handling old flat format."""
+    watchlist_raw = data.get("watchlist", {})
+    if isinstance(watchlist_raw, list):
+        # Old flat format — belongs to "default" workspace
+        if workspace_id == "default":
+            return watchlist_raw
+        return []
+    return watchlist_raw.get(workspace_id, [])
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API: Custom Profiles
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def get_custom_profiles() -> dict[str, dict]:
+def get_custom_profiles(workspace_id: str = "default") -> dict[str, dict]:
     """Return all user-created custom profiles keyed by name."""
     client = _get_supabase_client()
 
     if client is None:
         # Fallback to local JSON
-        return _load_json_data()["profiles"]
+        return _get_profiles_for_workspace(_load_json_data(), workspace_id)
 
     try:
-        response = client.table("custom_profiles").select("*").execute()
+        response = (
+            client.table("custom_profiles")
+            .select("*")
+            .eq("workspace_id", workspace_id)
+            .execute()
+        )
         profiles = {}
         for row in response.data:
             name = row["profile_name"]
@@ -121,17 +183,22 @@ def get_custom_profiles() -> dict[str, dict]:
         return profiles
     except Exception as e:
         logger.warning(f"Failed to fetch profiles from Supabase: {e}. Falling back to JSON.")
-        return _load_json_data()["profiles"]
+        return _get_profiles_for_workspace(_load_json_data(), workspace_id)
 
 
-def save_custom_profile(name: str, profile: dict) -> None:
+def save_custom_profile(name: str, profile: dict, workspace_id: str = "default") -> None:
     """Create or update a custom profile by name."""
     client = _get_supabase_client()
 
     if client is None:
         # Fallback to local JSON
         data = _load_json_data()
-        data["profiles"][name] = profile
+        profiles_raw = data.get("profiles", {})
+        # Migrate to nested format if needed
+        if not _is_nested_profiles(profiles_raw):
+            data["profiles"] = {"default": profiles_raw}
+        data["profiles"].setdefault(workspace_id, {})
+        data["profiles"][workspace_id][name] = profile
         _save_json_data(data)
         return
 
@@ -139,6 +206,7 @@ def save_custom_profile(name: str, profile: dict) -> None:
         client.table("custom_profiles").upsert(
             {
                 "profile_name": name,
+                "workspace_id": workspace_id,
                 "category": profile.get("category", name),
                 "rsi_bull_min": int(profile["rsi_bull_min"]),
                 "rsi_bull_max": int(profile["rsi_bull_max"]),
@@ -148,39 +216,78 @@ def save_custom_profile(name: str, profile: dict) -> None:
                 "description": profile.get("description", ""),
             }
         ).execute()
-        logger.info(f"Saved profile '{name}' to Supabase")
+        logger.info(f"Saved profile '{name}' to Supabase (workspace={workspace_id})")
     except Exception as e:
         logger.warning(f"Failed to save profile to Supabase: {e}. Falling back to JSON.")
         data = _load_json_data()
-        data["profiles"][name] = profile
+        profiles_raw = data.get("profiles", {})
+        if not _is_nested_profiles(profiles_raw):
+            data["profiles"] = {"default": profiles_raw}
+        data["profiles"].setdefault(workspace_id, {})
+        data["profiles"][workspace_id][name] = profile
         _save_json_data(data)
 
 
-def delete_custom_profile(name: str) -> None:
+def delete_custom_profile(name: str, workspace_id: str = "default") -> None:
     """Delete a custom profile and remove any ticker overrides pointing to it."""
     client = _get_supabase_client()
 
     if client is None:
         # Fallback to local JSON
         data = _load_json_data()
-        data["profiles"].pop(name, None)
-        data["ticker_overrides"] = {
-            t: k for t, k in data["ticker_overrides"].items() if k != name
-        }
+        profiles_raw = data.get("profiles", {})
+        if _is_nested_profiles(profiles_raw):
+            data["profiles"].setdefault(workspace_id, {})
+            data["profiles"][workspace_id].pop(name, None)
+        else:
+            # Old flat format — only "default" workspace exists
+            if workspace_id == "default":
+                data["profiles"].pop(name, None)
+
+        # Clean up ticker overrides for this workspace
+        overrides_raw = data.get("ticker_overrides", {})
+        first_val = next(iter(overrides_raw.values()), None) if overrides_raw else None
+        if isinstance(first_val, str):
+            # Old flat format
+            if workspace_id == "default":
+                data["ticker_overrides"] = {
+                    t: k for t, k in overrides_raw.items() if k != name
+                }
+        else:
+            ws_overrides = overrides_raw.get(workspace_id, {})
+            data["ticker_overrides"][workspace_id] = {
+                t: k for t, k in ws_overrides.items() if k != name
+            }
         _save_json_data(data)
         return
 
     try:
-        # Cascade delete via foreign key (ticker_overrides will auto-delete)
-        client.table("custom_profiles").delete().eq("profile_name", name).execute()
-        logger.info(f"Deleted profile '{name}' from Supabase")
+        # Cascade delete via workspace-scoped filter
+        client.table("custom_profiles").delete().eq("profile_name", name).eq("workspace_id", workspace_id).execute()
+        logger.info(f"Deleted profile '{name}' from Supabase (workspace={workspace_id})")
     except Exception as e:
         logger.warning(f"Failed to delete profile from Supabase: {e}. Falling back to JSON.")
         data = _load_json_data()
-        data["profiles"].pop(name, None)
-        data["ticker_overrides"] = {
-            t: k for t, k in data["ticker_overrides"].items() if k != name
-        }
+        profiles_raw = data.get("profiles", {})
+        if _is_nested_profiles(profiles_raw):
+            data["profiles"].setdefault(workspace_id, {})
+            data["profiles"][workspace_id].pop(name, None)
+        else:
+            if workspace_id == "default":
+                data["profiles"].pop(name, None)
+
+        overrides_raw = data.get("ticker_overrides", {})
+        first_val = next(iter(overrides_raw.values()), None) if overrides_raw else None
+        if isinstance(first_val, str):
+            if workspace_id == "default":
+                data["ticker_overrides"] = {
+                    t: k for t, k in overrides_raw.items() if k != name
+                }
+        else:
+            ws_overrides = overrides_raw.get(workspace_id, {})
+            data["ticker_overrides"][workspace_id] = {
+                t: k for t, k in ws_overrides.items() if k != name
+            }
         _save_json_data(data)
 
 
@@ -189,26 +296,31 @@ def delete_custom_profile(name: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def get_ticker_overrides() -> dict[str, str]:
+def get_ticker_overrides(workspace_id: str = "default") -> dict[str, str]:
     """Return the user-defined ticker → profile_key override map."""
     client = _get_supabase_client()
 
     if client is None:
         # Fallback to local JSON
-        return _load_json_data()["ticker_overrides"]
+        return _get_overrides_for_workspace(_load_json_data(), workspace_id)
 
     try:
-        response = client.table("ticker_overrides").select("*").execute()
+        response = (
+            client.table("ticker_overrides")
+            .select("*")
+            .eq("workspace_id", workspace_id)
+            .execute()
+        )
         overrides = {}
         for row in response.data:
             overrides[row["ticker"]] = row["profile_name"]
         return overrides
     except Exception as e:
         logger.warning(f"Failed to fetch ticker overrides from Supabase: {e}. Falling back to JSON.")
-        return _load_json_data()["ticker_overrides"]
+        return _get_overrides_for_workspace(_load_json_data(), workspace_id)
 
 
-def set_ticker_override(ticker: str, profile_key_str: str) -> None:
+def set_ticker_override(ticker: str, profile_key_str: str, workspace_id: str = "default") -> None:
     """Override the profile used for a specific ticker symbol."""
     client = _get_supabase_client()
     ticker = ticker.upper()
@@ -216,7 +328,13 @@ def set_ticker_override(ticker: str, profile_key_str: str) -> None:
     if client is None:
         # Fallback to local JSON
         data = _load_json_data()
-        data["ticker_overrides"][ticker] = profile_key_str
+        overrides_raw = data.get("ticker_overrides", {})
+        first_val = next(iter(overrides_raw.values()), None) if overrides_raw else None
+        if isinstance(first_val, str):
+            # Old flat format — migrate to nested
+            data["ticker_overrides"] = {"default": overrides_raw}
+        data["ticker_overrides"].setdefault(workspace_id, {})
+        data["ticker_overrides"][workspace_id][ticker] = profile_key_str
         _save_json_data(data)
         return
 
@@ -225,17 +343,23 @@ def set_ticker_override(ticker: str, profile_key_str: str) -> None:
             {
                 "ticker": ticker,
                 "profile_name": profile_key_str,
+                "workspace_id": workspace_id,
             }
         ).execute()
-        logger.info(f"Set ticker override: {ticker} → {profile_key_str}")
+        logger.info(f"Set ticker override: {ticker} → {profile_key_str} (workspace={workspace_id})")
     except Exception as e:
         logger.warning(f"Failed to set ticker override in Supabase: {e}. Falling back to JSON.")
         data = _load_json_data()
-        data["ticker_overrides"][ticker] = profile_key_str
+        overrides_raw = data.get("ticker_overrides", {})
+        first_val = next(iter(overrides_raw.values()), None) if overrides_raw else None
+        if isinstance(first_val, str):
+            data["ticker_overrides"] = {"default": overrides_raw}
+        data["ticker_overrides"].setdefault(workspace_id, {})
+        data["ticker_overrides"][workspace_id][ticker] = profile_key_str
         _save_json_data(data)
 
 
-def remove_ticker_override(ticker: str) -> None:
+def remove_ticker_override(ticker: str, workspace_id: str = "default") -> None:
     """Remove a ticker override, reverting to auto-detection."""
     client = _get_supabase_client()
     ticker = ticker.upper()
@@ -243,17 +367,97 @@ def remove_ticker_override(ticker: str) -> None:
     if client is None:
         # Fallback to local JSON
         data = _load_json_data()
-        data["ticker_overrides"].pop(ticker, None)
+        overrides_raw = data.get("ticker_overrides", {})
+        first_val = next(iter(overrides_raw.values()), None) if overrides_raw else None
+        if isinstance(first_val, str):
+            # Old flat format
+            if workspace_id == "default":
+                data["ticker_overrides"].pop(ticker, None)
+        else:
+            data["ticker_overrides"].setdefault(workspace_id, {})
+            data["ticker_overrides"][workspace_id].pop(ticker, None)
         _save_json_data(data)
         return
 
     try:
-        client.table("ticker_overrides").delete().eq("ticker", ticker).execute()
-        logger.info(f"Removed ticker override: {ticker}")
+        client.table("ticker_overrides").delete().eq("ticker", ticker).eq("workspace_id", workspace_id).execute()
+        logger.info(f"Removed ticker override: {ticker} (workspace={workspace_id})")
     except Exception as e:
         logger.warning(f"Failed to remove ticker override from Supabase: {e}. Falling back to JSON.")
         data = _load_json_data()
-        data["ticker_overrides"].pop(ticker, None)
+        overrides_raw = data.get("ticker_overrides", {})
+        first_val = next(iter(overrides_raw.values()), None) if overrides_raw else None
+        if isinstance(first_val, str):
+            if workspace_id == "default":
+                data["ticker_overrides"].pop(ticker, None)
+        else:
+            data["ticker_overrides"].setdefault(workspace_id, {})
+            data["ticker_overrides"][workspace_id].pop(ticker, None)
+        _save_json_data(data)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API: Watchlist
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_watchlist(workspace_id: str = "default") -> list[str]:
+    """Return the user's watchlist of tickers from Supabase or local JSON fallback."""
+    client = _get_supabase_client()
+
+    if client is None:
+        logger.debug("Supabase not available, loading watchlist from local JSON")
+        return _get_watchlist_for_workspace(_load_json_data(), workspace_id)
+
+    try:
+        response = (
+            client.table("watchlist")
+            .select("tickers")
+            .eq("workspace_id", workspace_id)
+            .limit(1)
+            .execute()
+        )
+        if response.data and len(response.data) > 0:
+            tickers = response.data[0].get("tickers", [])
+            logger.info(f"Loaded watchlist from Supabase (workspace={workspace_id}): {tickers}")
+            return tickers if isinstance(tickers, list) else []
+        logger.debug("Watchlist table is empty, returning empty list")
+        return []
+    except Exception as e:
+        logger.warning(f"Failed to fetch watchlist from Supabase: {e}. Falling back to JSON.")
+        return _get_watchlist_for_workspace(_load_json_data(), workspace_id)
+
+
+def save_watchlist(tickers: list[str], workspace_id: str = "default") -> None:
+    """Save the user's watchlist to Supabase or local JSON fallback."""
+    client = _get_supabase_client()
+
+    if client is None:
+        # Fallback to local JSON
+        data = _load_json_data()
+        watchlist_raw = data.get("watchlist", {})
+        if isinstance(watchlist_raw, list):
+            # Old flat format — migrate to nested
+            data["watchlist"] = {"default": watchlist_raw}
+        data["watchlist"].setdefault(workspace_id, [])
+        data["watchlist"][workspace_id] = tickers
+        _save_json_data(data)
+        return
+
+    try:
+        # Upsert keyed on workspace_id (not a hardcoded id=1)
+        client.table("watchlist").upsert(
+            {"workspace_id": workspace_id, "tickers": tickers}
+        ).execute()
+        logger.info(f"Saved watchlist with {len(tickers)} tickers to Supabase (workspace={workspace_id})")
+    except Exception as e:
+        logger.warning(f"Failed to save watchlist to Supabase: {e}. Falling back to JSON.")
+        data = _load_json_data()
+        watchlist_raw = data.get("watchlist", {})
+        if isinstance(watchlist_raw, list):
+            data["watchlist"] = {"default": watchlist_raw}
+        data["watchlist"].setdefault(workspace_id, [])
+        data["watchlist"][workspace_id] = tickers
         _save_json_data(data)
 
 
@@ -262,57 +466,7 @@ def remove_ticker_override(ticker: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Public API: Watchlist
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def get_watchlist() -> list[str]:
-    """Return the user's watchlist of tickers from Supabase or local JSON fallback."""
-    client = _get_supabase_client()
-
-    if client is None:
-        logger.debug("Supabase not available, loading watchlist from local JSON")
-        return _load_json_data().get("watchlist", [])
-
-    try:
-        response = client.table("watchlist").select("tickers").limit(1).execute()
-        if response.data and len(response.data) > 0:
-            tickers = response.data[0].get("tickers", [])
-            logger.info(f"Loaded watchlist from Supabase: {tickers}")
-            return tickers if isinstance(tickers, list) else []
-        logger.debug("Watchlist table is empty, returning empty list")
-        return []
-    except Exception as e:
-        logger.warning(f"Failed to fetch watchlist from Supabase: {e}. Falling back to JSON.")
-        return _load_json_data().get("watchlist", [])
-
-
-def save_watchlist(tickers: list[str]) -> None:
-    """Save the user's watchlist to Supabase or local JSON fallback."""
-    client = _get_supabase_client()
-
-    if client is None:
-        # Fallback to local JSON
-        data = _load_json_data()
-        data["watchlist"] = tickers
-        _save_json_data(data)
-        return
-
-    try:
-        # Upsert: update if exists, insert if not
-        client.table("watchlist").upsert(
-            {"id": 1, "tickers": tickers}  # Always use id=1 for single watchlist
-        ).execute()
-        logger.info(f"Saved watchlist with {len(tickers)} tickers to Supabase")
-    except Exception as e:
-        logger.warning(f"Failed to save watchlist to Supabase: {e}. Falling back to JSON.")
-        data = _load_json_data()
-        data["watchlist"] = tickers
-        _save_json_data(data)
-
-
-def migrate_json_to_supabase() -> bool:
+def migrate_json_to_supabase(workspace_id: str = "default") -> bool:
     """
     One-time migration: sync local JSON to Supabase if Supabase is available.
     Returns True if migration succeeded, False otherwise.
@@ -323,13 +477,13 @@ def migrate_json_to_supabase() -> bool:
 
     try:
         json_data = _load_json_data()
-        local_profiles = json_data.get("profiles", {})
-        local_overrides = json_data.get("ticker_overrides", {})
-        local_watchlist = json_data.get("watchlist", [])
+        local_profiles = _get_profiles_for_workspace(json_data, workspace_id)
+        local_overrides = _get_overrides_for_workspace(json_data, workspace_id)
+        local_watchlist = _get_watchlist_for_workspace(json_data, workspace_id)
 
-        # Check if Supabase is empty
+        # Check if Supabase is empty for this workspace
         profiles_count = (
-            client.table("custom_profiles").select("id").execute().data
+            client.table("custom_profiles").select("id").eq("workspace_id", workspace_id).execute().data
         )
         if profiles_count:
             logger.debug("Supabase already has profiles, skipping migration")
@@ -337,17 +491,20 @@ def migrate_json_to_supabase() -> bool:
 
         # Migrate profiles
         for name, profile in local_profiles.items():
-            save_custom_profile(name, profile)
+            save_custom_profile(name, profile, workspace_id)
 
         # Migrate ticker overrides
         for ticker, profile_key in local_overrides.items():
-            set_ticker_override(ticker, profile_key)
+            set_ticker_override(ticker, profile_key, workspace_id)
 
         # Migrate watchlist
         if local_watchlist:
-            save_watchlist(local_watchlist)
+            save_watchlist(local_watchlist, workspace_id)
 
-        logger.info(f"Migrated {len(local_profiles)} profiles, {len(local_overrides)} overrides, and watchlist to Supabase")
+        logger.info(
+            f"Migrated {len(local_profiles)} profiles, {len(local_overrides)} overrides, "
+            f"and watchlist to Supabase (workspace={workspace_id})"
+        )
         return True
     except Exception as e:
         logger.warning(f"Migration failed: {e}")
