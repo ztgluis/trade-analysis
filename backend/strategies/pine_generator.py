@@ -392,15 +392,16 @@ class PineScriptGenerator:
             blocks.append("// Volume MA")
             blocks.append("vol_ma = ta.sma(volume, vol_ma_len)")
 
-        # SL/TP in ticks (always computed for strategy.exit)
-        blocks.append(
-            "\n".join([
-                "",
-                "// Stop-loss and take-profit in ticks",
-                "sl_points = strategy.position_avg_price * sl_pct / 100.0 / syminfo.mintick",
-                "tp_points = strategy.position_avg_price * tp_pct / 100.0 / syminfo.mintick",
-            ])
-        )
+        if self.output_type != "indicator":
+            # SL/TP in ticks (strategies only — used by strategy.exit)
+            blocks.append(
+                "\n".join([
+                    "",
+                    "// Stop-loss and take-profit in ticks",
+                    "sl_points = strategy.position_avg_price * sl_pct / 100.0 / syminfo.mintick",
+                    "tp_points = strategy.position_avg_price * tp_pct / 100.0 / syminfo.mintick",
+                ])
+            )
 
         return "\n".join(blocks)
 
