@@ -909,7 +909,7 @@ def render_profiles_page(workspace_id: str = "default") -> None:
                 st.error("Ticker is required.")
             else:
                 ov_key = all_profile_names[ov_profile]
-                set_ticker_override(ov_ticker, ov_key)
+                set_ticker_override(ov_ticker, ov_key, workspace_id)
                 st.toast(f"Override saved: {ov_ticker} → {ov_profile}", icon="✅")
                 st.rerun()
 
