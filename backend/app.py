@@ -952,7 +952,8 @@ def render_strategies_page(workspace_id: str = "default") -> None:
         if not strategies:
             st.info(
                 "No strategies saved yet.  "
-                "Generate one in the **⚡ Generate** tab and press **💾 Save to Library**."
+                "Go to the **⚡ Generate** tab, configure your strategy, "
+                "and click **💾 Save to Library**."
             )
         else:
             # ── Summary table ─────────────────────────────────────────────────
