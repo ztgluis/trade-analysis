@@ -290,15 +290,37 @@ def build_signal_timeline(r: dict) -> go.Figure | None:
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_sidebar() -> tuple[list[str], int, bool]:
+def render_sidebar(workspace_id: str = "default") -> tuple[list[str], int, bool]:
     st.sidebar.title("📈 Trade Analysis")
     st.sidebar.caption("Decision Dashboard · v1.0")
+    st.sidebar.divider()
+
+    # ── Workspace ──────────────────────────────────────────────────────────
+    with st.sidebar.expander("🔑 Workspace", expanded=False):
+        st.caption("Your personal workspace token. Bookmark this URL or share it to access your data from any device.")
+        st.code(workspace_id, language=None)
+
+        # Show full URL with workspace param
+        # Can't easily get the full URL in Streamlit, so just show the token
+        st.caption("Add `?w=YOUR_TOKEN` to the app URL to resume your workspace.")
+
+        st.divider()
+        new_wid = st.text_input("Switch to another workspace:", placeholder="Enter token...", key="switch_workspace_input")
+        if st.button("Switch", key="switch_workspace_btn") and new_wid.strip():
+            clean = new_wid.strip()
+            st.session_state["workspace_id"] = clean
+            st.query_params["w"] = clean
+            # Clear cached session data so it reloads from new workspace
+            for key in ["watchlist", "results", "migration_attempted"]:
+                st.session_state.pop(key, None)
+            st.rerun()
+
     st.sidebar.divider()
 
     # ── Watchlist ──────────────────────────────────────────────────────────
     st.sidebar.subheader("📋 Watchlist")
     if "watchlist" not in st.session_state:
-        watchlist = supabase_db.get_watchlist()
+        watchlist = supabase_db.get_watchlist(workspace_id)
         if watchlist:
             st.session_state.watchlist = watchlist
         else:
