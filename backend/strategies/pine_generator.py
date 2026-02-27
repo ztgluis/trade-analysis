@@ -326,6 +326,18 @@ class PineScriptGenerator:
                 ])
             )
 
+            # Signal Display toggles — let users hide individual marker types in TradingView
+            blocks.append(
+                "\n".join([
+                    "",
+                    "// Signal Display",
+                    'show_buy_sigs    = input.bool(true,  "Show Buy Signals",      group="Signal Display")',
+                    'show_bounce_sigs = input.bool(true,  "Show Bounce Signals",   group="Signal Display")',
+                    'strong_only      = input.bool(false, "Strong Buys Only",      group="Signal Display",',
+                    '     tooltip="When enabled, only plot buy markers when ≥2 confirmation signals agree")',
+                ])
+            )
+
         return "\n".join(blocks)
 
     # ── INDICATORS ─────────────────────────────────────────────────────────────
