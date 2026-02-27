@@ -47,6 +47,76 @@ python run_decide_unified.py GLD SNAP META
 python run_multi.py GOOG META NVDA TSLA
 ```
 
+## Configuration
+
+### Supabase Setup (Optional but Recommended)
+
+Custom profiles and ticker overrides can persist across both local development and Streamlit Cloud deployments using Supabase (a PostgreSQL backend). Without setup, profiles are stored locally in `~/.trader-bot/custom_profiles.json` (local-only, lost on cloud redeploy).
+
+**Step 1: Create Supabase Project**
+1. Sign up at https://supabase.com (free tier available)
+2. Create a new project
+3. Go to **Settings → API** and copy:
+   - Project URL (e.g., `https://xxx.supabase.co`)
+   - Anon Public Key (the `eyJ...` token)
+
+**Step 2: Create Database Tables**
+
+In Supabase **SQL Editor**, run:
+
+```sql
+CREATE TABLE custom_profiles (
+  id BIGSERIAL PRIMARY KEY,
+  profile_name TEXT UNIQUE NOT NULL,
+  category TEXT NOT NULL,
+  rsi_bull_min INTEGER NOT NULL,
+  rsi_bull_max INTEGER NOT NULL,
+  adx_threshold DECIMAL NOT NULL,
+  sl_pct DECIMAL NOT NULL,
+  tp_pct DECIMAL NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE ticker_overrides (
+  id BIGSERIAL PRIMARY KEY,
+  ticker TEXT NOT NULL,
+  profile_name TEXT NOT NULL REFERENCES custom_profiles(profile_name) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(ticker)
+);
+```
+
+**Step 3: Local Development Setup**
+
+Create `~/.streamlit/secrets.toml`:
+
+```toml
+[supabase]
+url = "https://your-project.supabase.co"
+key = "your-anon-public-key"
+```
+
+Then restart Streamlit — you'll see "✅ Synced local profiles to cloud" on first run.
+
+**Step 4: Streamlit Cloud Deployment**
+
+In your Streamlit Cloud app dashboard:
+1. Click **Settings → Secrets**
+2. Paste the same credentials:
+   ```toml
+   [supabase]
+   url = "https://your-project.supabase.co"
+   key = "your-anon-public-key"
+   ```
+3. Click **Save** and redeploy
+
+Now both local and cloud environments use the same Supabase database — profiles are synced automatically.
+
+**Fallback Behavior**: If Supabase credentials are missing or unavailable, the app gracefully falls back to local JSON files (`~/.trader-bot/custom_profiles.json`).
+
 ## Dashboard Features
 
 ### Watchlist View
