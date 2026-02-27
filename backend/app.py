@@ -22,6 +22,7 @@ from analysis.asset_profiles  import (
     set_ticker_override, remove_ticker_override,
 )
 from analysis import supabase_db
+from strategies.pine_generator import PineScriptGenerator
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
