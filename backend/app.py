@@ -773,7 +773,7 @@ def render_profiles_page(workspace_id: str = "default") -> None:
     # Tab 2 — Custom profiles (create / delete)
     # ─────────────────────────────────────────────────────────────────────────
     with tab2:
-        custom = get_custom_profiles()
+        custom = get_custom_profiles(workspace_id)
 
         if custom:
             st.subheader(f"Your Custom Profiles  ({len(custom)})")
