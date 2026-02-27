@@ -1,5 +1,5 @@
 """
-analysis/asset_profiles.py  —  Per-asset parameter profiles for the Growth Signal Bot.
+analysis/asset_profiles.py  —  Per-asset parameter profiles for Trade Analysis.
 
 Why this matters
 ────────────────
