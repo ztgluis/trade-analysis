@@ -810,18 +810,13 @@ def _lib_backtest_expander(strat: dict, key_pfx: str) -> None:
 def render_strategies_page(workspace_id: str = "default") -> None:
     st.title("🎛️ Generator")
 
-    # Get generator tab from query params
+    # Get generator tab from query params, default to "generate"
     params = st.query_params
     gen_tab = params.get("gt", "generate")  # gt = generator tab
     gen_tab_index = 0 if gen_tab == "generate" else 1
 
-    tab_gen, tab_lib = st.tabs(["⚡ Generate", "📚 Library"])
-
-    # Update query params based on which tab is active
-    if tab_gen._selected_index if hasattr(tab_gen, '_selected_index') else gen_tab_index == 0:
-        st.query_params["gt"] = "generate"
-    else:
-        st.query_params["gt"] = "library"
+    tab_labels = ["⚡ Generate", "📚 Library"]
+    tab_gen, tab_lib = st.tabs(tab_labels)
 
     # ══════════════════════════════════════════════════════════════════════
     # Tab 1 — Generate
