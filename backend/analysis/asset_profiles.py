@@ -239,31 +239,19 @@ def save_custom_profile(name: str, profile: dict) -> None:
     profile should contain at minimum:
         category, rsi_bull_min, rsi_bull_max, adx_threshold, sl_pct, tp_pct
     """
-    data = _load_custom_data()
-    data["profiles"][name] = profile
-    _save_custom_data(data)
+    supabase_db.save_custom_profile(name, profile)
 
 
 def delete_custom_profile(name: str) -> None:
     """Delete a custom profile and remove any ticker overrides pointing to it."""
-    data = _load_custom_data()
-    data["profiles"].pop(name, None)
-    # Prune orphaned ticker overrides
-    data["ticker_overrides"] = {
-        t: k for t, k in data["ticker_overrides"].items() if k != name
-    }
-    _save_custom_data(data)
+    supabase_db.delete_custom_profile(name)
 
 
 def set_ticker_override(ticker: str, profile_key_str: str) -> None:
     """Override the profile used for a specific ticker symbol."""
-    data = _load_custom_data()
-    data["ticker_overrides"][ticker.upper()] = profile_key_str
-    _save_custom_data(data)
+    supabase_db.set_ticker_override(ticker, profile_key_str)
 
 
 def remove_ticker_override(ticker: str) -> None:
     """Remove a ticker override, reverting to auto-detection."""
-    data = _load_custom_data()
-    data["ticker_overrides"].pop(ticker.upper(), None)
-    _save_custom_data(data)
+    supabase_db.remove_ticker_override(ticker)
