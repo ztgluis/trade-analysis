@@ -28,7 +28,7 @@ _INDICATOR_DEFAULTS: dict[str, dict[str, Any]] = {
     "ema20":  {"length": 20},
     "sma50":  {"length": 50},
     "sma200": {"length": 200},
-    "vwap":   {},
+    "vwap":   {"anchor": "Week", "source": "HLC3"},
     "atr":    {"length": 14},
     "fib":    {"swing": 50},
     "volume": {"length": 20},
