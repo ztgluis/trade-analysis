@@ -570,6 +570,7 @@ class PineScriptGenerator:
         blocks: list[str] = [
             "",
             "// \u2500\u2500\u2500 Plots " + "\u2500" * 61,
+            "",
         ]
 
         if self._has("ema20"):
