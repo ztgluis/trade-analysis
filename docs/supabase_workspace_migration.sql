@@ -12,15 +12,6 @@
 ALTER TABLE custom_profiles
   ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 
--- Drop old unique constraint on profile_name alone
-ALTER TABLE custom_profiles
-  DROP CONSTRAINT IF EXISTS custom_profiles_profile_name_key;
-
--- New unique constraint: (profile_name, workspace_id) pair must be unique
-ALTER TABLE custom_profiles
-  ADD CONSTRAINT custom_profiles_name_workspace_key
-  UNIQUE (profile_name, workspace_id);
-
 
 -- ── 2. ticker_overrides ──────────────────────────────────────────────────────
 
@@ -28,11 +19,30 @@ ALTER TABLE custom_profiles
 ALTER TABLE ticker_overrides
   ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT 'default';
 
--- Drop old unique constraint on ticker alone
+-- Drop the FK first (it depends on custom_profiles_profile_name_key index)
+ALTER TABLE ticker_overrides
+  DROP CONSTRAINT IF EXISTS ticker_overrides_profile_name_fkey;
+
+-- Now safe to drop the old unique constraint on profile_name alone
+ALTER TABLE custom_profiles
+  DROP CONSTRAINT IF EXISTS custom_profiles_profile_name_key;
+
+-- New unique constraint on custom_profiles: (profile_name, workspace_id)
+ALTER TABLE custom_profiles
+  ADD CONSTRAINT custom_profiles_name_workspace_key
+  UNIQUE (profile_name, workspace_id);
+
+-- New FK on ticker_overrides referencing the compound key
+ALTER TABLE ticker_overrides
+  ADD CONSTRAINT ticker_overrides_profile_workspace_fkey
+  FOREIGN KEY (profile_name, workspace_id)
+  REFERENCES custom_profiles (profile_name, workspace_id)
+  ON DELETE CASCADE;
+
+-- New unique constraint on ticker_overrides: (ticker, workspace_id)
 ALTER TABLE ticker_overrides
   DROP CONSTRAINT IF EXISTS ticker_overrides_ticker_key;
 
--- New unique constraint: (ticker, workspace_id) pair must be unique
 ALTER TABLE ticker_overrides
   ADD CONSTRAINT ticker_overrides_ticker_workspace_key
   UNIQUE (ticker, workspace_id);
