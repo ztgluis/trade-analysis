@@ -21,6 +21,7 @@ from analysis.asset_profiles  import (
     save_custom_profile, delete_custom_profile,
     set_ticker_override, remove_ticker_override,
 )
+from analysis import supabase_db
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
