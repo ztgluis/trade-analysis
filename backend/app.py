@@ -263,7 +263,7 @@ def build_signal_timeline(r: dict) -> go.Figure | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_sidebar() -> tuple[list[str], int, bool]:
-    st.sidebar.title("📈 Growth Signal Bot")
+    st.sidebar.title("📈 Trade Analysis")
     st.sidebar.caption("Decision Dashboard · v1.0")
     st.sidebar.divider()
 
