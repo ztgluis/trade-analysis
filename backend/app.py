@@ -1016,6 +1016,8 @@ def render_scanner_page(workspace_id: str = "default") -> None:
                         wl.append(sel_ticker)
                         st.session_state["watchlist"] = wl
                         supabase_db.save_watchlist(wl, workspace_id)
+                    # Only analyze this single ticker, not the full watchlist
+                    st.session_state["_analyze_single"] = sel_ticker
                     st.session_state["page"] = "dashboard"
                     st.query_params["p"] = "dashboard"
                     st.rerun()
