@@ -1700,10 +1700,19 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
                 label_visibility="collapsed",
             )
 
-    # D. Analysis logic — parallel execution via thread pool
+    # D. Analysis logic — parallel or single-ticker execution
     results = st.session_state.get("results", {})
+    single_ticker = st.session_state.pop("_analyze_single", None)
 
-    if run_all or not results:
+    if single_ticker:
+        # Analyze only the requested ticker (e.g. from Scanner "Full Analysis")
+        with st.spinner(f"Analyzing {single_ticker}…"):
+            results[single_ticker] = analyze(single_ticker, horizon_td=horizon_td)
+        st.session_state["results"]  = results
+        st.session_state["horizon"]  = horizon_td
+        st.session_state["selected_ticker"] = single_ticker
+        st.session_state["last_run"] = datetime.datetime.now().strftime("%H:%M:%S")
+    elif run_all or not results:
         if st.session_state.watchlist:
             results = _run_parallel_analysis(
                 st.session_state.watchlist, horizon_td,
