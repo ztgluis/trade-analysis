@@ -101,11 +101,14 @@ def _categorize(row: pd.Series) -> str:
     gap = row.get("Gap", 0) or 0
     rel_vol = row.get("Rel Volume", 0) or 0
 
+    # Normalise to comparable scales:
+    # Change/Gap as percentage points (e.g. 0.168 → 16.8)
+    # Rel Volume as-is (e.g. 5.5)
     signals = {
-        "gainer":   change if change > 0 else 0,
-        "loser":    abs(change) if change < 0 else 0,
-        "volume":   (rel_vol - 1) / 10 if rel_vol > 1 else 0,  # normalise
-        "gap_up":   gap if gap > 0 else 0,
-        "gap_down": abs(gap) if gap < 0 else 0,
+        "gainer":   abs(change) * 100 if change > 0 else 0,
+        "loser":    abs(change) * 100 if change < 0 else 0,
+        "volume":   rel_vol if rel_vol > 2 else 0,
+        "gap_up":   abs(gap) * 100 if gap > 0 else 0,
+        "gap_down": abs(gap) * 100 if gap < 0 else 0,
     }
     return max(signals, key=signals.get)  # type: ignore[arg-type]
