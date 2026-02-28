@@ -37,7 +37,7 @@ def _fetch_from_finviz() -> pd.DataFrame:
         print(f"[scanner] Fetching {idx_label} …")
         screener = Custom()
         screener.set_filter(filters_dict={"Index": idx_label})
-        df = screener.screener_view(columns=_CUSTOM_COLUMNS)
+        df = screener.screener_view(columns=_CUSTOM_COLUMNS, limit=10000)
         if df is not None and not df.empty:
             all_frames.append(df)
 
