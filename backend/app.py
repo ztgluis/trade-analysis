@@ -833,6 +833,194 @@ def _lib_backtest_expander(strat: dict, key_pfx: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Scanner Page
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt_scan_vol(v) -> str:
+    try:
+        v = float(v)
+        if v >= 1_000_000: return f"{v / 1_000_000:.1f}M"
+        if v >= 1_000:     return f"{v / 1_000:.0f}K"
+        return str(int(v))
+    except (ValueError, TypeError):
+        return "--"
+
+
+def render_scanner_page(workspace_id: str = "default") -> None:
+    st.title("🔍 Ticker Scanner")
+    st.caption(
+        "Scans S&P 500 + NASDAQ 100 (~550 tickers) via Finviz. "
+        "Ranks by price action, volume, and gaps to surface the most interesting movers."
+    )
+
+    # ── Controls bar ─────────────────────────────────────────────────────────
+    with st.container(border=True):
+        col_scan, col_top, col_cat = st.columns([2, 1, 2])
+
+        with col_scan:
+            force = st.button("🔍 Scan Now", type="primary", use_container_width=True)
+        with col_top:
+            top_n = st.selectbox("Show top", [25, 50, 100, 200], index=2, key="scanner_top_n")
+        with col_cat:
+            cat_options = ["All", "gainer", "loser", "volume", "gap_up", "gap_down"]
+            cat_filter = st.selectbox("Category", cat_options, key="scanner_cat")
+
+    # ── Run scan ─────────────────────────────────────────────────────────────
+    do_scan = force or "scanner_results" not in st.session_state
+    if do_scan:
+        with st.spinner("Scanning ~550 tickers via Finviz …"):
+            try:
+                raw = fetch_scanner_data(force_refresh=force)
+                ranked = score_and_rank(raw, top_n=200)  # fetch top 200, filter later
+                st.session_state["scanner_results"] = ranked
+                st.session_state["scanner_raw"] = raw
+                st.session_state["scanner_last_run"] = datetime.datetime.now().strftime("%H:%M:%S")
+            except Exception as e:
+                st.error(f"Scanner error: {e}")
+                return
+
+    ranked = st.session_state.get("scanner_results")
+    if ranked is None or ranked.empty:
+        st.info("Click **🔍 Scan Now** to fetch the latest market data.")
+        return
+
+    # ── Apply filters ────────────────────────────────────────────────────────
+    display = ranked.copy()
+    if cat_filter != "All":
+        display = display[display["category"] == cat_filter].reset_index(drop=True)
+    display = display.head(top_n).reset_index(drop=True)
+
+    # ── Summary metrics ──────────────────────────────────────────────────────
+    raw_all = st.session_state.get("scanner_raw", display)
+    raw_change = pd.to_numeric(raw_all.get("Change", pd.Series(dtype=float)), errors="coerce").fillna(0)
+    gainers_n = int((raw_change > 0).sum())
+    losers_n = int((raw_change < 0).sum())
+    avg_chg = raw_change.mean()
+    raw_rv = pd.to_numeric(raw_all.get("Rel Volume", pd.Series(dtype=float)), errors="coerce").fillna(0)
+    avg_rv = raw_rv[raw_rv > 0].mean() if (raw_rv > 0).any() else 0
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Scanned", len(raw_all))
+    m2.metric("Gainers", gainers_n)
+    m3.metric("Losers", losers_n)
+    m4.metric("Avg Change", f"{avg_chg * 100:+.1f}%")
+    m5.metric("Avg Rel Vol", f"{avg_rv:.1f}x")
+
+    last_run = st.session_state.get("scanner_last_run", "")
+    if last_run:
+        st.caption(f"Last scan: {last_run}")
+
+    # ── Build display table ──────────────────────────────────────────────────
+    table_data = {
+        "#":       list(range(1, len(display) + 1)),
+        "Ticker":  display["Ticker"].tolist(),
+    }
+    if "Company" in display.columns:
+        table_data["Company"] = display["Company"].str[:28].tolist()
+    if "Sector" in display.columns:
+        table_data["Sector"] = display["Sector"].str[:18].tolist()
+    table_data["Price"] = display["Price"].apply(
+        lambda x: f"${x:,.2f}" if pd.notna(x) else "--"
+    ).tolist()
+    table_data["Change"] = display["Change"].apply(
+        lambda x: f"{x * 100:+.1f}%" if pd.notna(x) else "--"
+    ).tolist()
+    table_data["Volume"] = display["Volume"].apply(_fmt_scan_vol).tolist()
+    if "Rel Volume" in display.columns:
+        table_data["Rel Vol"] = display["Rel Volume"].apply(
+            lambda x: f"{x:.1f}x" if pd.notna(x) and x > 0 else "--"
+        ).tolist()
+    if "Gap" in display.columns:
+        table_data["Gap"] = display["Gap"].apply(
+            lambda x: f"{x * 100:+.1f}%" if pd.notna(x) and x != 0 else "--"
+        ).tolist()
+    table_data["Score"] = display["attention_score"].apply(
+        lambda x: f"{x:.0f}"
+    ).tolist()
+    table_data["Category"] = display["category"].tolist()
+
+    table_df = pd.DataFrame(table_data)
+
+    # ── Styled dataframe ─────────────────────────────────────────────────────
+    def _style_change(val):
+        if isinstance(val, str):
+            if val.startswith("+"): return "color: #44dd88; font-weight: bold"
+            if val.startswith("-"): return "color: #ff5555; font-weight: bold"
+        return ""
+
+    def _style_score(val):
+        try:
+            s = float(val)
+            if s >= 80: return "color: #ff4444; font-weight: bold"
+            if s >= 60: return "color: #ffaa00; font-weight: bold"
+            if s >= 40: return "color: #44dd88"
+        except (ValueError, TypeError):
+            pass
+        return "color: #888888"
+
+    style_cols = ["Change"]
+    if "Gap" in table_df.columns:
+        style_cols.append("Gap")
+
+    styled = table_df.style
+    styled = styled.map(_style_change, subset=[c for c in style_cols if c in table_df.columns])
+    styled = styled.map(_style_score, subset=["Score"])
+
+    event = st.dataframe(
+        styled,
+        use_container_width=True,
+        hide_index=True,
+        height=min(38 * len(table_df) + 40, 700),
+        on_select="rerun",
+        selection_mode="single-row",
+        key="scanner_table",
+    )
+
+    # ── Row selection → Quick look ───────────────────────────────────────────
+    if event and event.selection and event.selection.rows:
+        row_idx = event.selection.rows[0]
+        if row_idx < len(display):
+            sel = display.iloc[row_idx]
+            sel_ticker = sel["Ticker"]
+            st.divider()
+            st.subheader(f"Quick Look: {sel_ticker}")
+
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                company = sel.get("Company", sel_ticker)
+                sector = sel.get("Sector", "")
+                st.markdown(f"**{company}** · {sector}")
+
+                chg = sel.get("Change", 0) or 0
+                price = sel.get("Price", 0) or 0
+                vol = sel.get("Volume", 0) or 0
+                rv = sel.get("Rel Volume", 0) or 0
+                gap = sel.get("Gap", 0) or 0
+                score = sel.get("attention_score", 0) or 0
+
+                st.markdown(
+                    f"Price: **${price:,.2f}** · "
+                    f"Change: **{chg * 100:+.1f}%** · "
+                    f"Volume: **{_fmt_scan_vol(vol)}** · "
+                    f"Rel Vol: **{rv:.1f}x** · "
+                    f"Gap: **{gap * 100:+.1f}%**"
+                )
+                st.markdown(f"Attention Score: **{score:.0f} / 100** · Category: **{sel.get('category', '')}**")
+
+            with c2:
+                if st.button(f"📊 Full Analysis → {sel_ticker}", type="primary", use_container_width=True):
+                    # Add to watchlist and switch to dashboard
+                    wl = st.session_state.get("watchlist", DEFAULT_WATCHLIST.copy())
+                    if sel_ticker not in wl:
+                        wl.append(sel_ticker)
+                        st.session_state["watchlist"] = wl
+                        supabase_db.save_watchlist(wl, workspace_id)
+                    st.session_state["page"] = "dashboard"
+                    st.query_params["p"] = "dashboard"
+                    st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Strategies Page
 # ─────────────────────────────────────────────────────────────────────────────
 
