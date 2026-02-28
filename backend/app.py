@@ -1633,7 +1633,7 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
     run_all = bool(st.session_state.pop("_do_run_all", False))
 
     with st.container(border=True):
-        col_add, col_run, col_hz = st.columns([4, 2, 2])
+        col_add, col_rm, col_run, col_hz = st.columns([3, 2, 2, 2])
 
         with col_add:
             with st.form("add_ticker_form", clear_on_submit=True):
@@ -1658,6 +1658,27 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
                         st.session_state["last_run"] = datetime.datetime.now().strftime(
                             "%H:%M:%S"
                         )
+                        st.rerun()
+
+        with col_rm:
+            wl = st.session_state.watchlist
+            if wl:
+                r1, r2 = st.columns([4, 1])
+                rm_choice = r1.selectbox(
+                    "Remove", wl,
+                    label_visibility="collapsed", key="remove_ticker_select",
+                    placeholder="Remove ticker…",
+                    index=None,
+                )
+                if r2.button("✕", key="btn_remove_ticker", use_container_width=True):
+                    if rm_choice and rm_choice in wl:
+                        st.session_state.watchlist.remove(rm_choice)
+                        supabase_db.save_watchlist(
+                            st.session_state.watchlist, workspace_id
+                        )
+                        st.session_state.get("results", {}).pop(rm_choice, None)
+                        if st.session_state.get("selected_ticker") == rm_choice:
+                            st.session_state.pop("selected_ticker", None)
                         st.rerun()
 
         with col_run:
