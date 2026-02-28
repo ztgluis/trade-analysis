@@ -406,9 +406,11 @@ def render_sidebar(workspace_id: str = "default") -> None:
     # Get page from query params or default to dashboard
     _PAGE_MAP = {
         "📊 Dashboard":  "dashboard",
+        "🔍 Scanner":    "scanner",
         "⚙️ Profiles":   "profiles",
         "🎛️ Generator":  "generator",
     }
+    _NAV_LABELS = list(_PAGE_MAP.keys())
     _REVERSE_PAGE_MAP = {v: k for k, v in _PAGE_MAP.items()}
 
     params = st.query_params
@@ -417,10 +419,10 @@ def render_sidebar(workspace_id: str = "default") -> None:
 
     page_label = st.sidebar.radio(
         "Navigation",
-        ["📊 Dashboard", "⚙️ Profiles", "🎛️ Generator"],
+        _NAV_LABELS,
         label_visibility="collapsed",
         key="nav_radio",
-        index=["📊 Dashboard", "⚙️ Profiles", "🎛️ Generator"].index(default_label),
+        index=_NAV_LABELS.index(default_label),
     )
     st.session_state["page"] = _PAGE_MAP[page_label]
     st.query_params["p"] = st.session_state["page"]
