@@ -1744,7 +1744,9 @@ def main() -> None:
     render_sidebar(workspace_id)  # sets st.session_state["page"] via radio
 
     page = st.session_state.get("page", "dashboard")
-    if page == "profiles":
+    if page == "scanner":
+        render_scanner_page(workspace_id)
+    elif page == "profiles":
         render_profiles_page(workspace_id)
     elif page == "generator":
         render_strategies_page(workspace_id)
