@@ -4,7 +4,7 @@ A decision-making engine for swing traders — analyzes bull/bear regimes, ident
 
 ## Features
 
-- **Real-time Decision Analysis**: Long/short scoring (0-10) with actionable verdicts (STRONG LONG, LEAN SHORT, BOUNCE, WAIT)
+- **Real-time Decision Analysis**: Long/short scoring (0-16) with actionable verdicts (STRONG LONG, LEAN SHORT, BOUNCE, WAIT)
 - **Asset Class Profiles**: 5 built-in profiles (Large-Cap Growth, High-Vol Tech, Small-Cap Volatile, Precious Metals, ETFs) + unlimited custom profiles
 - **Per-Ticker Overrides**: Pin specific tickers to custom profiles; changes persist automatically
 - **Risk/Reward Analysis**: Entry zones, stop-loss, take-profit targets with implied R/R ratios
@@ -260,7 +260,7 @@ All saved scripts are workspace-scoped — each workspace has its own library.
 ## Project Structure
 
 ```
-trader-bot/
+trade-analysis/
 ├── backend/
 │   ├── analysis/
 │   │   ├── decision_engine.py       # Core analysis: buy/sell scoring, verdicts
