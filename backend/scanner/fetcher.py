@@ -1,8 +1,9 @@
 """
 Finviz data fetcher with 15-minute pickle caching.
 
-Scrapes the Finviz screener for S&P 500 and NASDAQ-100 tickers,
-returning a merged DataFrame with overview + technical columns.
+Uses the Custom screener view to get exactly the columns we need
+(Ticker, Company, Sector, Price, Change, Volume, Avg Volume,
+Rel Volume, Gap, Market Cap) in a single pass per index.
 """
 from __future__ import annotations
 
@@ -15,71 +16,57 @@ CACHE_DIR = Path(__file__).parent.parent.parent / ".cache" / "scanner"
 SCAN_CACHE = CACHE_DIR / "latest_scan.pkl"
 SCAN_TTL_MINUTES = 15
 
+# Custom screener column IDs (from finvizfinance.screener.get_custom_screener_columns)
+# 1=Ticker, 2=Company, 3=Sector, 6=Market Cap, 61=Gap,
+# 63=Average Volume, 64=Relative Volume, 65=Price, 66=Change, 67=Volume
+_CUSTOM_COLUMNS = [1, 2, 3, 6, 61, 63, 64, 65, 66, 67]
+
 
 def _fetch_from_finviz() -> pd.DataFrame:
     """
     Fetch screening data from Finviz for S&P 500 + NASDAQ 100.
 
-    Uses two screener views per index:
-      - Overview  → Ticker, Company, Sector, Industry, Market Cap, P/E, Price, Change, Volume
-      - Technical → Ticker, Gap, Avg Volume, Rel Volume  (and others)
-
-    Merges on Ticker, deduplicates across indexes.
+    Uses the Custom screener view for each index, which gives us all
+    needed columns in a single paginated fetch.
     """
-    from finvizfinance.screener.overview import Overview
-    from finvizfinance.screener.technical import Technical
+    from finvizfinance.screener.custom import Custom
 
-    all_overview: list[pd.DataFrame] = []
-    all_technical: list[pd.DataFrame] = []
+    all_frames: list[pd.DataFrame] = []
 
     for idx_label in ["S&P 500", "NASDAQ 100"]:
-        print(f"[scanner] Fetching {idx_label} overview …")
-        ov = Overview()
-        ov.set_filter(filters_dict={"Index": idx_label})
-        df_ov = ov.screener_view()
-        if df_ov is not None and not df_ov.empty:
-            all_overview.append(df_ov)
+        print(f"[scanner] Fetching {idx_label} …")
+        screener = Custom()
+        screener.set_filter(filters_dict={"Index": idx_label})
+        df = screener.screener_view(columns=_CUSTOM_COLUMNS)
+        if df is not None and not df.empty:
+            all_frames.append(df)
 
-        print(f"[scanner] Fetching {idx_label} technicals …")
-        tech = Technical()
-        tech.set_filter(filters_dict={"Index": idx_label})
-        df_tech = tech.screener_view()
-        if df_tech is not None and not df_tech.empty:
-            all_technical.append(df_tech)
-
-    # Merge overview data
-    overview = pd.concat(all_overview, ignore_index=True) if all_overview else pd.DataFrame()
-    technical = pd.concat(all_technical, ignore_index=True) if all_technical else pd.DataFrame()
-
-    if overview.empty:
+    if not all_frames:
         raise RuntimeError("Finviz returned no data. The site may be down or rate-limiting.")
 
-    # Deduplicate
-    overview = overview.drop_duplicates(subset=["Ticker"], keep="first")
-    technical = technical.drop_duplicates(subset=["Ticker"], keep="first")
-
-    # Pick useful columns from technical (avoid duplicating Price/Change/Volume)
-    tech_cols = ["Ticker"]
-    for col in ["Gap", "Avg Volume", "Rel Volume", "SMA20", "SMA50", "SMA200", "RSI"]:
-        if col in technical.columns:
-            tech_cols.append(col)
-
-    if len(tech_cols) > 1 and not technical.empty:
-        combined = overview.merge(technical[tech_cols], on="Ticker", how="left")
-    else:
-        combined = overview
+    combined = pd.concat(all_frames, ignore_index=True)
+    combined = combined.drop_duplicates(subset=["Ticker"], keep="first")
 
     # ── Normalize types ──────────────────────────────────────────────────────
-    # Change: finvizfinance may return "5.23%" as string or 0.0523 as float
-    if "Change" in combined.columns:
-        combined["Change"] = _parse_pct(combined["Change"])
+    # finvizfinance returns Change/Gap as float ratios (e.g. -0.0321 = -3.21%)
+    for col in ["Change", "Gap"]:
+        if col in combined.columns:
+            combined[col] = pd.to_numeric(combined[col], errors="coerce").fillna(0)
 
-    if "Gap" in combined.columns:
-        combined["Gap"] = _parse_pct(combined["Gap"])
-
-    for col in ["Volume", "Avg Volume"]:
+    for col in ["Volume", "Average Volume"]:
         if col in combined.columns:
             combined[col] = pd.to_numeric(combined[col], errors="coerce").fillna(0).astype(int)
+
+    # Rename "Average Volume" → "Avg Volume" and "Relative Volume" → "Rel Volume"
+    rename_map = {}
+    if "Average Volume" in combined.columns:
+        rename_map["Average Volume"] = "Avg Volume"
+    if "Relative Volume" in combined.columns:
+        rename_map["Relative Volume"] = "Rel Volume"
+    if "Market Cap." in combined.columns:
+        rename_map["Market Cap."] = "Market Cap"
+    if rename_map:
+        combined = combined.rename(columns=rename_map)
 
     if "Rel Volume" in combined.columns:
         combined["Rel Volume"] = pd.to_numeric(combined["Rel Volume"], errors="coerce").fillna(0)
@@ -87,28 +74,13 @@ def _fetch_from_finviz() -> pd.DataFrame:
     if "Price" in combined.columns:
         combined["Price"] = pd.to_numeric(combined["Price"], errors="coerce")
 
-    # Compute Rel Volume if missing but Avg Volume is available
+    # Compute Rel Volume from Avg Volume if the column wasn't returned
     if "Rel Volume" not in combined.columns and "Avg Volume" in combined.columns:
         avg = combined["Avg Volume"].replace(0, 1)
         combined["Rel Volume"] = combined["Volume"] / avg
 
     print(f"[scanner] {len(combined)} tickers fetched from Finviz")
     return combined.reset_index(drop=True)
-
-
-def _parse_pct(series: pd.Series) -> pd.Series:
-    """Parse a column that may be '5.23%' strings or already float."""
-    def _convert(val):
-        if isinstance(val, (int, float)):
-            # Already numeric — check if it looks like a ratio (< 5) or pct (> 5)
-            # Finviz values like 0.0523 are ratios; 5.23 are percents
-            return float(val) if abs(val) < 5 else float(val) / 100
-        s = str(val).strip().replace("%", "")
-        try:
-            return float(s) / 100
-        except ValueError:
-            return 0.0
-    return series.apply(_convert)
 
 
 def fetch_scanner_data(force_refresh: bool = False) -> pd.DataFrame:
