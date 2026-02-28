@@ -1723,19 +1723,7 @@ def render_dashboard_page(workspace_id: str = "default") -> None:
 
     render_dashboard(results)
 
-    # F. Remove-selected action strip — appears below the table when a row is selected
-    sel_now = st.session_state.get("selected_ticker")
-    if sel_now and sel_now in st.session_state.watchlist:
-        rm_col, _ = st.columns([2, 6])
-        with rm_col:
-            if st.button(f"✕ Remove {sel_now}", key="btn_remove_selected"):
-                st.session_state.watchlist.remove(sel_now)
-                supabase_db.save_watchlist(st.session_state.watchlist, workspace_id)
-                st.session_state.get("results", {}).pop(sel_now, None)
-                st.session_state.pop("selected_ticker", None)
-                st.rerun()
-
-    # G. Deep dive
+    # F. Deep dive
     st.divider()
     sel = st.session_state.get("selected_ticker")
     if not sel:
