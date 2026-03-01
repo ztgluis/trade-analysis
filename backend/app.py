@@ -466,7 +466,7 @@ def render_dashboard(results: dict) -> None:
 
     # ── Data rows ─────────────────────────────────────────────────────────────
     # 4-column layout: Ticker(btn) | Price + Verdict | Scores + Regime | Signal
-    W = [1, 2.5, 2.5, 2]
+    W = [1.1, 2.4, 2.5, 2]
 
     for ticker, r in results.items():
         is_sel = ticker == selected
