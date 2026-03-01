@@ -45,8 +45,9 @@ def fetch_ohlcv(
             return df
 
     print(f"[data] Downloading {ticker} {period} {interval} …")
-    raw = yf.download(ticker, period=period, interval=interval,
-                      auto_adjust=True, progress=False, threads=False)
+    with _download_lock:
+        raw = yf.download(ticker, period=period, interval=interval,
+                          auto_adjust=True, progress=False, threads=False)
 
     if raw.empty:
         raise ValueError(f"No data for '{ticker}'. Check the symbol.")
