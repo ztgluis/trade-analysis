@@ -460,10 +460,9 @@ def save_watchlist(tickers: list[str], workspace_id: str = "default") -> None:
     except Exception as e:
         logger.warning(f"Failed to save watchlist to Supabase: {e}. Falling back to JSON.")
         data = _load_json_data()
-        watchlist_raw = data.get("watchlist", {})
-        if isinstance(watchlist_raw, list):
-            data["watchlist"] = {"default": watchlist_raw}
-        data["watchlist"].setdefault(workspace_id, [])
+        data.setdefault("watchlist", {})
+        if isinstance(data["watchlist"], list):
+            data["watchlist"] = {"default": data["watchlist"]}
         data["watchlist"][workspace_id] = tickers
         _save_json_data(data)
 
