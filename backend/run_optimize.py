@@ -53,12 +53,30 @@ def parse_sweep(sweep_str: str) -> dict[str, list[float]]:
 
 
 def apply_param(config: SignalConfig, path: str, value: float) -> None:
-    """Apply a parameter override to a config in-place."""
+    """Apply a parameter override to a config in-place.
+
+    Supported paths:
+      component.weight            → override component weight
+      component.params.key        → override component parameter
+      exits.sl_pct / exits.tp_pct → override exit params
+      thresholds.score_*_frac     → override threshold fractions
+      entry.signal_name.min_score_frac → override entry signal threshold
+    """
     parts = path.split(".")
     if len(parts) == 2 and parts[1] == "weight":
         comp_name = parts[0]
         if comp_name in config.components:
             config.components[comp_name].weight = value
+        else:
+            raise ValueError(f"Unknown component: {comp_name}")
+    elif len(parts) == 3 and parts[1] == "params":
+        comp_name, _, key = parts
+        if comp_name in config.components:
+            # Use int if value is a whole number and param looks like a length
+            if value == int(value) and any(k in key for k in ("len", "lookback", "swing")):
+                config.components[comp_name].params[key] = int(value)
+            else:
+                config.components[comp_name].params[key] = value
         else:
             raise ValueError(f"Unknown component: {comp_name}")
     elif parts[0] == "exits":
@@ -69,6 +87,12 @@ def apply_param(config: SignalConfig, path: str, value: float) -> None:
             raise ValueError(f"Unknown exit param: {attr}")
     elif parts[0] == "thresholds":
         config.thresholds[parts[1]] = value
+    elif parts[0] == "entry" and len(parts) == 3:
+        sig_name, attr = parts[1], parts[2]
+        if sig_name in config.entry_signals:
+            setattr(config.entry_signals[sig_name], attr, value)
+        else:
+            raise ValueError(f"Unknown entry signal: {sig_name}")
     else:
         raise ValueError(f"Unknown param path: {path}")
 
