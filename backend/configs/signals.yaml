@@ -1,0 +1,189 @@
+# Signal Configuration — Growth Signal v4.3 (Legacy)
+# Matches LongSignalStrategy v4.3 defaults exactly.
+# Weights equal each component's max raw score, so the weighted totals
+# are identical to the legacy integer bull/bear scores.
+#
+# To customise: change weights to reflect your signal relevance.
+# Example: set regime.weight=5 and rsi_zone.weight=1 to emphasise
+# trend structure over lagging momentum indicators.
+# Thresholds are expressed as fractions of max_score and auto-scale.
+
+name: "Growth Signal v4.3 (Legacy)"
+description: "Matches LongSignalStrategy v4.3 defaults exactly"
+
+entry_mode: "All Signals"   # "All Signals" | "Buy Only" | "Strong Buy Only"
+
+thresholds:
+  score_moderate_frac: 0.5       # 8/16 in legacy
+  score_strong_frac: 0.6875      # 11/16 in legacy
+
+# Global indicator params (not tied to a specific component)
+indicator_params:
+  ema_len: 20                    # EMA period for consecutive bars / bounce detection
+  use_daily_regime: false        # set true for 1H charts (resample daily SMA200)
+  warmup_bars: 210               # bars to skip before first entry (SMA200 warmup)
+
+# ── Scoring Components ───────────────────────────────────────────────────
+# Each component:
+#   enabled  — include in score (true/false)
+#   weight   — relevance multiplier (higher = more impact on total score)
+#   required — if true, entry signals listing this component require it to pass
+#   params   — indicator-specific parameters
+
+components:
+  regime:
+    enabled: true
+    weight: 2
+    category: trend
+    params:
+      sma_slow: 200
+
+  sma50:
+    enabled: true
+    weight: 1
+    category: trend
+    params:
+      sma_mid: 50
+
+  rsi_zone:
+    enabled: true
+    weight: 2
+    category: momentum
+    params:
+      rsi_len: 14
+      bull_min: 42
+      bull_max: 62
+
+  macd_positive:
+    enabled: true
+    weight: 1
+    category: momentum
+    params:
+      fast: 12
+      slow: 26
+      sig: 9
+
+  macd_cross:
+    enabled: true
+    weight: 1
+    category: momentum
+
+  volume:
+    enabled: true
+    weight: 2
+    category: volume
+    params:
+      mult: 1.25
+      strong: 1.8
+
+  vwap_primary:
+    enabled: true
+    weight: 1
+    category: vwap
+    params:
+      freq: W
+
+  vwap_secondary:
+    enabled: true
+    weight: 1
+    category: vwap
+    params:
+      freq: M
+
+  consecutive_bars:
+    enabled: true
+    weight: 1
+    category: quality
+    params:
+      consec_len: 2
+
+  weekly_mtf:
+    enabled: true
+    weight: 1
+    category: quality
+    params:
+      freq: W
+      rsi_len: 14
+      ema_len: 20
+
+  rolling_poc:
+    enabled: true
+    weight: 1
+    category: structure
+    params:
+      lookback: 50
+
+  adx:
+    enabled: true
+    weight: 1
+    category: trend_strength
+    params:
+      len: 14
+      threshold: 20.0
+
+  fibonacci:
+    enabled: true
+    weight: 1
+    category: structure
+    params:
+      swing_len: 50
+      threshold_pct: 1.5
+
+# ── Entry Signals ────────────────────────────────────────────────────────
+# gates:                boolean conditions that must all pass
+# required_components:  components that must individually pass (beyond score)
+# min_score_frac:       minimum bull_score as fraction of max_score
+
+entry_signals:
+  buy_signal:
+    enabled: true
+    min_score_frac: 0.5          # 8/16
+    gates:
+      - consec_above
+      - above_atr_buffer
+      - bull_regime
+      - no_bear_divergence
+    required_components:
+      - macd_cross
+      - adx
+
+  bounce_signal:
+    enabled: true
+    min_score_frac: 0.5          # 8/16
+    gates:
+      - was_below_then_reclaimed_ema
+      - bull_candle
+      - rsi_below_65
+      - bull_regime
+      - no_bear_divergence
+
+  vwap_bounce:
+    enabled: true
+    min_score_frac: 0.4375       # 7/16
+    gates:
+      - near_vwap_lower_band
+      - bull_candle
+      - rsi_35_60
+      - above_mvwap
+      - bull_regime
+
+# ── Sell Signal ──────────────────────────────────────────────────────────
+
+sell_signal:
+  gates:
+    - consec_below
+    - below_atr_buffer
+    - bear_regime
+    - no_bull_divergence
+  use_macd_gate: true
+
+# ── Exit / Risk Management ──────────────────────────────────────────────
+
+exits:
+  sl_pct: 5.0
+  tp_pct: 15.0
+  use_trail: false
+  trail_pct: 5.0
+  atr_len: 14
+  atr_mult: 0.4
+  score_min_sell_frac: 0.5714    # 8/14 (bear_max=14 in legacy)
