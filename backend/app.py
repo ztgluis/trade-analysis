@@ -464,30 +464,17 @@ def render_dashboard(results: dict) -> None:
 
     selected = st.session_state.get("selected_ticker")
 
-    # ── Column layout ─────────────────────────────────────────────────────────
-    #   Ticker   Price   Verdict          Scores     Regime    vsSPY   Signal
-    W = [1.0,    0.8,    2.2,             1.2,       1.2,      0.8,    1.8]
-
-    # ── Header row ────────────────────────────────────────────────────────────
-    hdr = st.columns(W)
-    _H = ["Ticker", "Price", "Verdict", "L / S · R/R", "Regime · RSI",
-          "vs SPY", "Last Signal"]
-    for col, label in zip(hdr, _H):
-        col.markdown(
-            f"<span style='color:#888;font-size:0.82em'>{label}</span>",
-            unsafe_allow_html=True,
-        )
-
     # ── Data rows ─────────────────────────────────────────────────────────────
+    # 4-column layout: Ticker(btn) | Price + Verdict | Scores + Regime | Signal
+    W = [1, 2.5, 2.5, 2]
+
     for ticker, r in results.items():
         is_sel = ticker == selected
 
-        # Build cell values
         if r.get("error"):
-            cells = {
-                "price": "—", "verdict": "⚠ Error",
-                "scores": "—", "regime": "—", "alpha": "—", "signal": "—",
-            }
+            mid_left  = "⚠ Error"
+            mid_right = "—"
+            right     = "—"
         else:
             last_sig = "—"
             if r.get("recent_signals"):
@@ -498,16 +485,20 @@ def render_dashboard(results: dict) -> None:
             rr      = r.get("rr_ratio")
             rr_s    = f"{rr:.1f}:1" if rr is not None else "—"
 
-            cells = {
-                "price":   f"${r['price']:,.2f}",
-                "verdict": r["verdict"],
-                "scores":  f"{r['long_score']}/{r['short_score']} · {_rr_html(rr_s)}",
-                "regime":  f"{REGIME_EMOJI.get(r['regime'], '?')} {r['regime'].upper()} · {r['rsi']:.0f}",
-                "alpha":   alpha_s,
-                "signal":  last_sig,
-            }
+            mid_left = (
+                f"`${r['price']:,.2f}` &nbsp; "
+                f"{_verdict_html(r['verdict'])}"
+            )
+            mid_right = (
+                f"L {r['long_score']} · S {r['short_score']} · {_rr_html(rr_s)}"
+                f" &nbsp; {REGIME_EMOJI.get(r['regime'], '?')} {r['regime'].upper()}"
+                f" · RSI {r['rsi']:.0f}"
+            )
+            right = (
+                f"{_alpha_html(alpha_s)} vs SPY"
+                f" &nbsp; <span style='color:#aaa'>{last_sig}</span>"
+            )
 
-        # Render row
         cols = st.columns(W)
 
         with cols[0]:
@@ -520,15 +511,9 @@ def render_dashboard(results: dict) -> None:
                 st.session_state["selected_ticker"] = ticker
                 st.rerun()
 
-        cols[1].markdown(f"`{cells['price']}`")
-        cols[2].markdown(_verdict_html(cells["verdict"]), unsafe_allow_html=True)
-        cols[3].markdown(cells["scores"], unsafe_allow_html=True)
-        cols[4].markdown(cells["regime"])
-        cols[5].markdown(_alpha_html(cells["alpha"]), unsafe_allow_html=True)
-        cols[6].markdown(
-            f"<span style='font-size:0.85em'>{cells['signal']}</span>",
-            unsafe_allow_html=True,
-        )
+        cols[1].markdown(mid_left, unsafe_allow_html=True)
+        cols[2].markdown(mid_right, unsafe_allow_html=True)
+        cols[3].markdown(right, unsafe_allow_html=True)
 
     if selected and selected in results and not results[selected].get("error"):
         st.caption(f"↓ Showing deep dive for **{selected}**")
