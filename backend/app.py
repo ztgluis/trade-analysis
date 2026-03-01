@@ -418,6 +418,11 @@ def render_sidebar(workspace_id: str = "default") -> None:
     current_page = params.get("p", "dashboard")
     default_label = _REVERSE_PAGE_MAP.get(current_page, "📊 Dashboard")
 
+    # Sync the radio widget to match a programmatic page change
+    # (e.g. Scanner "Full Analysis" button sets p=dashboard via query_params)
+    if st.session_state.get("nav_radio") != default_label:
+        st.session_state["nav_radio"] = default_label
+
     page_label = st.sidebar.radio(
         "Navigation",
         _NAV_LABELS,
