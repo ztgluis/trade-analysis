@@ -443,11 +443,10 @@ def save_watchlist(tickers: list[str], workspace_id: str = "default") -> None:
     if client is None:
         # Fallback to local JSON
         data = _load_json_data()
-        watchlist_raw = data.get("watchlist", {})
-        if isinstance(watchlist_raw, list):
+        data.setdefault("watchlist", {})
+        if isinstance(data["watchlist"], list):
             # Old flat format — migrate to nested
-            data["watchlist"] = {"default": watchlist_raw}
-        data["watchlist"].setdefault(workspace_id, [])
+            data["watchlist"] = {"default": data["watchlist"]}
         data["watchlist"][workspace_id] = tickers
         _save_json_data(data)
         return
