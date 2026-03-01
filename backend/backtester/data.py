@@ -2,11 +2,16 @@
 Data fetching with local pickle caching.
 Supports any Yahoo Finance ticker: BTC-USD, ABNB, NVDA, SPY, etc.
 """
+import threading
+
 import yfinance as yf
 import pandas as pd
 from pathlib import Path
 
 CACHE_DIR = Path(__file__).parent.parent.parent / ".cache" / "ohlcv"
+
+# yfinance is not thread-safe; serialize downloads
+_download_lock = threading.Lock()
 
 
 def fetch_ohlcv(
