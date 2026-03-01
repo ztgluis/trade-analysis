@@ -10,9 +10,12 @@ Usage:
         --sweep "regime.weight=1:5:1,adx.weight=0:3:1"
 
 Sweep format: "component.param=min:max:step,..."
-  - component.weight  → override component weight
-  - exits.sl_pct      → override stop-loss
-  - exits.tp_pct      → override take-profit
+  - component.weight            → override component weight
+  - component.params.key        → override component parameter
+  - exits.sl_pct                → override stop-loss
+  - exits.tp_pct                → override take-profit
+  - thresholds.score_*_frac     → override threshold fractions
+  - entry.signal_name.min_score_frac → override entry threshold
 """
 import argparse
 import copy
