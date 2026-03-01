@@ -433,99 +433,116 @@ def render_sidebar(workspace_id: str = "default") -> None:
 # Watchlist Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _verdict_html(val: str) -> str:
+    if "STRONG LONG" in val or "LEAN LONG" in val: return f"<span style='color:#44dd88;font-weight:bold'>{val}</span>"
+    if "BOUNCE" in val:                            return f"<span style='color:#aaff44;font-weight:bold'>{val}</span>"
+    if "SHORT" in val:                             return f"<span style='color:#ff5555;font-weight:bold'>{val}</span>"
+    if "WAIT" in val or "Error" in val:            return f"<span style='color:#888888'>{val}</span>"
+    return val
+
+def _alpha_html(val: str) -> str:
+    if val.startswith("+"): return f"<span style='color:#44dd88'>{val}</span>"
+    if val.startswith("-"): return f"<span style='color:#ff7777'>{val}</span>"
+    return val
+
+def _rr_html(val: str) -> str:
+    if val == "—": return "<span style='color:#666'>—</span>"
+    try:
+        ratio = float(val.split(":")[0])
+        if ratio >= 2.5: return f"<span style='color:#44dd88;font-weight:bold'>{val}</span>"
+        if ratio >= 1.5: return f"<span style='color:#ffdd44'>{val}</span>"
+        return f"<span style='color:#ff7777'>{val}</span>"
+    except Exception:
+        return val
+
+
 def render_dashboard(results: dict) -> None:
-    """Render watchlist summary table. Clicking a row selects that ticker."""
+    """Render watchlist summary table. Clicking a ticker selects it."""
     if not results:
-        st.info("Click **🔄 Run All Analysis** in the sidebar to load your watchlist.")
+        st.info("Click **▶ Run Analysis** to load your watchlist.")
         return
 
-    rows       = []
-    row_tickers = []   # parallel list to map row index → ticker
+    selected = st.session_state.get("selected_ticker")
+
+    # ── Column layout: widths for the 9 display columns ───────────────────────
+    #   Symbol  Price  Verdict         L/S     R/R   Regime   RSI  vsSPY  Signal
+    W = [1.1,   0.9,   2.4,           0.9,    0.7,  1.4,     0.6, 0.9,   1.8]
+
+    # ── Header row ────────────────────────────────────────────────────────────
+    hdr = st.columns(W)
+    _H = ["Symbol", "Price", "Verdict", "Long / Short", "R/R",
+          "Regime", "RSI", "vs SPY", "Last Signal"]
+    for col, label in zip(hdr, _H):
+        col.markdown(
+            f"<span style='color:#888;font-size:0.82em'>{label}</span>",
+            unsafe_allow_html=True,
+        )
+
+    # ── Data rows ─────────────────────────────────────────────────────────────
     for ticker, r in results.items():
+        is_sel = ticker == selected
+
+        # Build cell values
         if r.get("error"):
-            rows.append({"Symbol": ticker, "Price": "—", "Verdict": "⚠ Error",
-                         "Long": "—", "Short": "—", "R/R": "—",
-                         "Regime": "—", "RSI": "—", "ADX": "—",
-                         "1mo vs SPY": "—", "Last Signal": "—"})
-            row_tickers.append(ticker)
-            continue
+            cells = ["—", "⚠ Error", "—", "—", "—", "—", "—", "—"]
+        else:
+            last_sig = "—"
+            if r.get("recent_signals"):
+                ts, lbl, _ = r["recent_signals"][-1]
+                last_sig = f"{lbl}  {pd.Timestamp(ts).strftime('%b %d')}"
 
-        last_sig = "—"
-        if r.get("recent_signals"):
-            ts, lbl, _ = r["recent_signals"][-1]
-            last_sig = f"{lbl}  {pd.Timestamp(ts).strftime('%b %d')}"
+            alpha_s = pct(r.get("alpha_1m")) if r.get("alpha_1m") is not None else "—"
+            rr      = r.get("rr_ratio")
+            rr_s    = f"{rr:.1f}:1" if rr is not None else "—"
 
-        alpha_str = pct(r.get("alpha_1m")) if r.get("alpha_1m") is not None else "—"
-        rr        = r.get("rr_ratio")
-        rr_str    = f"{rr:.1f}:1" if rr is not None else "—"
+            cells = [
+                f"${r['price']:,.2f}",
+                r["verdict"],
+                f"{r['long_score']}/10 · {r['short_score']}/10",
+                rr_s,
+                f"{REGIME_EMOJI.get(r['regime'], '?')} {r['regime'].upper()}",
+                f"{r['rsi']:.0f}",
+                alpha_s,
+                last_sig,
+            ]
 
-        rows.append({
-            "Symbol":      ticker,
-            "Price":       f"${r['price']:,.2f}",
-            "Verdict":     r["verdict"],
-            "Long":        f"{r['long_score']}/10",
-            "Short":       f"{r['short_score']}/10",
-            "R/R":         rr_str,
-            "Regime":      f"{REGIME_EMOJI.get(r['regime'], '?')} {r['regime'].upper()}",
-            "RSI":         f"{r['rsi']:.0f}",
-            "ADX":         f"{r['adx']:.0f}{'✅' if r['adx_ok'] else ''}",
-            "1mo vs SPY":  alpha_str,
-            "Last Signal": last_sig,
-        })
-        row_tickers.append(ticker)
+        # Render row
+        cols = st.columns(W)
 
-    df_table = pd.DataFrame(rows)
+        with cols[0]:
+            if st.button(
+                f"{'▸ ' if is_sel else ''}{ticker}",
+                key=f"sel_{ticker}",
+                type="primary" if is_sel else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["selected_ticker"] = ticker
+                st.rerun()
 
-    def style_verdict(val: str) -> str:
-        if "STRONG LONG" in val or "LEAN LONG" in val: return "color:#44dd88;font-weight:bold"
-        if "BOUNCE" in val:                            return "color:#aaff44;font-weight:bold"
-        if "SHORT" in val:                             return "color:#ff5555;font-weight:bold"
-        if "WAIT" in val or "Error" in val:            return "color:#888888"
-        return ""
+        # Price
+        cols[1].markdown(f"`{cells[0]}`")
+        # Verdict (colored)
+        cols[2].markdown(_verdict_html(cells[1]), unsafe_allow_html=True)
+        # Long / Short
+        cols[3].markdown(f"`{cells[2]}`")
+        # R/R (colored)
+        cols[4].markdown(_rr_html(cells[3]), unsafe_allow_html=True)
+        # Regime
+        cols[5].markdown(cells[4])
+        # RSI
+        cols[6].markdown(f"`{cells[5]}`")
+        # vs SPY (colored)
+        cols[7].markdown(_alpha_html(cells[6]), unsafe_allow_html=True)
+        # Last Signal
+        cols[8].markdown(
+            f"<span style='font-size:0.85em'>{cells[7]}</span>",
+            unsafe_allow_html=True,
+        )
 
-    def style_alpha(val: str) -> str:
-        if val.startswith("+"): return "color:#44dd88"
-        if val.startswith("-"): return "color:#ff7777"
-        return ""
-
-    def style_rr(val: str) -> str:
-        if val == "—": return "color:#666666"
-        try:
-            ratio = float(val.split(":")[0])
-            if ratio >= 2.5: return "color:#44dd88;font-weight:bold"
-            if ratio >= 1.5: return "color:#ffdd44"
-            return "color:#ff7777"
-        except Exception:
-            return ""
-
-    styled = (df_table.style
-              .map(style_verdict, subset=["Verdict"])
-              .map(style_alpha,   subset=["1mo vs SPY"])
-              .map(style_rr,      subset=["R/R"]))
-
-    event = st.dataframe(
-        styled,
-        use_container_width=True,
-        hide_index=True,
-        height=38 * len(rows) + 40,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="watchlist_df",
-    )
-
-    # Handle row click → navigate to deep dive
-    if event.selection.rows:
-        row_idx = event.selection.rows[0]
-        if row_idx < len(row_tickers):
-            clicked = row_tickers[row_idx]
-            if clicked != st.session_state.get("selected_ticker"):
-                st.session_state["selected_ticker"] = clicked
-
-    sel = st.session_state.get("selected_ticker")
-    if sel and sel in results and not results[sel].get("error"):
-        st.caption(f"↓ Showing deep dive for **{sel}** — click any other row to switch")
+    if selected and selected in results and not results[selected].get("error"):
+        st.caption(f"↓ Showing deep dive for **{selected}**")
     else:
-        st.caption("↑ Click any row to open detailed analysis below")
+        st.caption("↑ Click any ticker to see detailed analysis below")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
