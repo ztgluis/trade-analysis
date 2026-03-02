@@ -1,0 +1,157 @@
+name: Growth Signal v4.3 (Legacy) (optimized)
+description: 'Best by sharpe: sl_pct=3.0, tp_pct=15.0, threshold=20.0'
+entry_mode: All Signals
+thresholds:
+  score_moderate_frac: 0.5
+  score_strong_frac: 0.6875
+indicator_params:
+  ema_len: 20
+  use_daily_regime: false
+  warmup_bars: 210
+components:
+  regime:
+    enabled: true
+    weight: 2
+    required: false
+    category: trend
+    params:
+      sma_slow: 200
+  sma50:
+    enabled: true
+    weight: 1
+    required: false
+    category: trend
+    params:
+      sma_mid: 50
+  rsi_zone:
+    enabled: true
+    weight: 2
+    required: false
+    category: momentum
+    params:
+      rsi_len: 14
+      bull_min: 42
+      bull_max: 62
+  macd_positive:
+    enabled: true
+    weight: 1
+    required: false
+    category: momentum
+    params:
+      fast: 12
+      slow: 26
+      sig: 9
+  macd_cross:
+    enabled: true
+    weight: 1
+    required: false
+    category: momentum
+    params: {}
+  volume:
+    enabled: true
+    weight: 2
+    required: false
+    category: volume
+    params:
+      mult: 1.25
+      strong: 1.8
+  vwap_primary:
+    enabled: true
+    weight: 1
+    required: false
+    category: vwap
+    params:
+      freq: W
+  vwap_secondary:
+    enabled: true
+    weight: 1
+    required: false
+    category: vwap
+    params:
+      freq: M
+  consecutive_bars:
+    enabled: true
+    weight: 1
+    required: false
+    category: quality
+    params:
+      consec_len: 2
+  weekly_mtf:
+    enabled: true
+    weight: 1
+    required: false
+    category: quality
+    params:
+      freq: W
+      rsi_len: 14
+      ema_len: 20
+  rolling_poc:
+    enabled: true
+    weight: 1
+    required: false
+    category: structure
+    params:
+      lookback: 50
+  adx:
+    enabled: true
+    weight: 1
+    required: false
+    category: trend_strength
+    params:
+      len: 14
+      threshold: 25.0
+  fibonacci:
+    enabled: true
+    weight: 1
+    required: false
+    category: structure
+    params:
+      swing_len: 50
+      threshold_pct: 1.5
+entry_signals:
+  buy_signal:
+    enabled: true
+    min_score_frac: 0.5
+    gates:
+    - consec_above
+    - above_atr_buffer
+    - bull_regime
+    - no_bear_divergence
+    required_components:
+    - macd_cross
+    - adx
+  bounce_signal:
+    enabled: true
+    min_score_frac: 0.5
+    gates:
+    - was_below_then_reclaimed_ema
+    - bull_candle
+    - rsi_below_65
+    - bull_regime
+    - no_bear_divergence
+    required_components: []
+  vwap_bounce:
+    enabled: true
+    min_score_frac: 0.4375
+    gates:
+    - near_vwap_lower_band
+    - bull_candle
+    - rsi_35_60
+    - above_mvwap
+    - bull_regime
+    required_components: []
+sell_signal:
+  gates:
+  - consec_below
+  - below_atr_buffer
+  - bear_regime
+  - no_bull_divergence
+  use_macd_gate: true
+exits:
+  sl_pct: 3.0
+  tp_pct: 15.0
+  use_trail: false
+  trail_pct: 5.0
+  atr_len: 14
+  atr_mult: 0.4
+  score_min_sell_frac: 0.5714285714285714
