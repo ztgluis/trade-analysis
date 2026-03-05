@@ -1,0 +1,37 @@
+//@version=6
+indicator("EMA Channel (5/100/200)", overlay=true, max_bars_back=500)
+
+// ── Inputs ──────────────────────────────────────────────────────────
+fast_len  = input.int(5,   "Fast EMA Length",   group="Fast Channel",  minval=1)
+med_len   = input.int(100, "Medium EMA Length",  group="Medium Channel", minval=1)
+slow_len  = input.int(200, "Slow EMA Length",    group="Trend Filter",  minval=1)
+show_bg   = input.bool(true, "Highlight Alignment", group="Display")
+
+// ── EMAs ────────────────────────────────────────────────────────────
+ema5_h   = ta.ema(high,  fast_len)
+ema5_l   = ta.ema(low,   fast_len)
+ema100_h = ta.ema(high,  med_len)
+ema100_l = ta.ema(low,   med_len)
+ema200   = ta.ema(close, slow_len)
+
+// ── Alignment detection ─────────────────────────────────────────────
+all_above = ema5_h > ema200 and ema5_l > ema200 and ema100_h > ema200 and ema100_l > ema200
+all_below = ema5_h < ema200 and ema5_l < ema200 and ema100_h < ema200 and ema100_l < ema200
+
+bg_col = show_bg ? (all_above ? color.new(color.green, 90) : all_below ? color.new(color.red, 90) : na) : na
+bgcolor(bg_col)
+
+// ── Plots ───────────────────────────────────────────────────────────
+plot(ema5_h,   "EMA 5 High",   color=color.new(color.white,  0), linewidth=1)
+plot(ema5_l,   "EMA 5 Low",    color=color.new(color.white,  0), linewidth=1)
+plot(ema100_h, "EMA 100 High", color=color.new(color.green,  0), linewidth=2)
+plot(ema100_l, "EMA 100 Low",  color=color.new(color.green,  0), linewidth=2)
+plot(ema200,   "EMA 200",      color=color.new(color.orange, 0), linewidth=3)
+
+// ── Fill between channels ───────────────────────────────────────────
+p5h  = plot(ema5_h,   display=display.none)
+p5l  = plot(ema5_l,   display=display.none)
+p100h = plot(ema100_h, display=display.none)
+p100l = plot(ema100_l, display=display.none)
+fill(p5h,  p5l,  color=color.new(color.white, 85), title="Fast Channel")
+fill(p100h, p100l, color=color.new(color.green, 85), title="Medium Channel")
